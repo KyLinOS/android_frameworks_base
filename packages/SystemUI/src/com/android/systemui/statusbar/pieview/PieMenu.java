@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2013 MoKee OpenSource Project
+ * Copyright (C) 2013 The KylinMod Open Source Project
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -56,6 +56,7 @@ import android.os.Handler;
 import android.os.UserHandle;
 import android.os.Vibrator;
 import android.provider.Settings;
+import android.service.notification.StatusBarNotification;
 import android.util.AttributeSet;
 import android.view.animation.AccelerateInterpolator;
 import android.view.animation.DecelerateInterpolator;
@@ -72,7 +73,6 @@ import android.widget.FrameLayout;
 import android.widget.ImageView;
 import android.widget.ScrollView;
 
-import com.android.internal.statusbar.StatusBarNotification;
 import com.android.internal.statusbar.StatusBarIcon;
 
 import com.android.systemui.R;
@@ -196,8 +196,6 @@ public class PieMenu extends FrameLayout {
     private float mStartBattery;
     private float mEndBattery;
     private int mBatteryLevel;
-
-    Handler mHandler;
 
     private class SnapPoint {
         public SnapPoint(int snapX, int snapY, int snapRadius, int snapAlpha, int snapGravity) {
@@ -528,12 +526,12 @@ public class PieMenu extends FrameLayout {
                 NotificationData.Entry entry = notifData.get(i);
                 StatusBarNotification statusNotif = entry.notification;
                 if (statusNotif == null) continue;
-                boolean hide = statusNotif.pkg.equals("com.mokee.halo");
+                boolean hide = statusNotif.getPackageName().equals("com.kylin.halo");
                 if (hide) {
                     mHiddenNotification++;
                     continue;
                 }
-                Notification notif = statusNotif.notification;
+                Notification notif = statusNotif.getNotification();
                 if (notif == null) continue;
                 CharSequence tickerText = notif.tickerText;
                 if (tickerText == null) continue;
@@ -611,15 +609,11 @@ public class PieMenu extends FrameLayout {
             }
         });
 
-        SettingsObserver settingsObserver = new SettingsObserver(new Handler());
-        settingsObserver.observe();
-
-        // Get all dimensions
-        getDimensions();
+        mPieSettingsObserver.observe();
 
         //MoKeeLauncher showPIENotificationsPanel
         IntentFilter intentFilter = new IntentFilter();
-        intentFilter.addAction("com.mokee.show_pie_expand");
+        intentFilter.addAction("com.kylin.show_pie_expand");
         mContext.registerReceiver(new BroadcastReceiver() {
 
             @Override
@@ -629,6 +623,8 @@ public class PieMenu extends FrameLayout {
             }
         }, intentFilter);
     }
+
+    private PieSettingsObserver mPieSettingsObserver = new PieSettingsObserver(new Handler());
 
     public void init() {
         mStatusPanel = new PieStatusPanel(mContext, mPanel);
@@ -1161,9 +1157,9 @@ public class PieMenu extends FrameLayout {
         && (item.getStartAngle() + item.getSweep() > polar);
     }
 
-    //setup observer to do stuff!
-    class SettingsObserver extends ContentObserver {
-        SettingsObserver(Handler handler) {
+    // setup observer to do stuff!
+    private class PieSettingsObserver extends ContentObserver {
+        PieSettingsObserver(Handler handler) {
             super(handler);
         }
 
@@ -1171,21 +1167,31 @@ public class PieMenu extends FrameLayout {
             ContentResolver resolver = mContext.getContentResolver();
 
             resolver.registerContentObserver(Settings.System.getUriFor(
-                    Settings.System.PIE_BACKGROUND), false, this);
+                    Settings.System.PIE_BACKGROUND), false, this,
+                    UserHandle.USER_ALL);
             resolver.registerContentObserver(Settings.System.getUriFor(
-                    Settings.System.PIE_SELECT), false, this);
+                    Settings.System.PIE_SELECT), false, this,
+                    UserHandle.USER_ALL);
             resolver.registerContentObserver(Settings.System.getUriFor(
-                    Settings.System.PIE_OUTLINES), false, this);
+                    Settings.System.PIE_OUTLINES), false, this,
+                    UserHandle.USER_ALL);
             resolver.registerContentObserver(Settings.System.getUriFor(
-                    Settings.System.PIE_STATUS_CLOCK), false, this);
+                    Settings.System.PIE_STATUS_CLOCK), false, this,
+                    UserHandle.USER_ALL);
             resolver.registerContentObserver(Settings.System.getUriFor(
-                    Settings.System.PIE_STATUS), false, this);
+                    Settings.System.PIE_STATUS), false, this,
+                    UserHandle.USER_ALL);
             resolver.registerContentObserver(Settings.System.getUriFor(
-                    Settings.System.PIE_CHEVRON_LEFT), false, this);
+                    Settings.System.PIE_CHEVRON_LEFT), false, this,
+                    UserHandle.USER_ALL);
             resolver.registerContentObserver(Settings.System.getUriFor(
-                    Settings.System.PIE_CHEVRON_RIGHT), false, this);
+                    Settings.System.PIE_CHEVRON_RIGHT), false, this,
+                    UserHandle.USER_ALL);
             resolver.registerContentObserver(Settings.System.getUriFor(
-                    Settings.System.PIE_JUICE), false, this);
+                    Settings.System.PIE_JUICE), false, this,
+                    UserHandle.USER_ALL);
+
+            // Get all dimensions
             getDimensions();
         }
 

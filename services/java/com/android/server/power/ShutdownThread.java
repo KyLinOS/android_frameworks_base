@@ -1,6 +1,9 @@
 /*
  * Copyright (C) 2008 The Android Open Source Project
  * Copyright (C) 2013 The CyanogenMod Project
+ * Copyright (c) 2012-2013, The Linux Foundation. All rights reserved.
+ *
+ * Not a Contribution.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -44,12 +47,15 @@ import android.os.SystemVibrator;
 import android.os.storage.IMountService;
 import android.os.storage.IMountShutdownObserver;
 import android.provider.Settings;
+import android.telephony.MSimTelephonyManager;
 
 import com.android.internal.telephony.ITelephony;
+import com.android.internal.telephony.msim.ITelephonyMSim;
 
 import android.util.Log;
 import android.view.WindowManager;
 import android.view.KeyEvent;
+import java.lang.reflect.Method;
 
 public final class ShutdownThread extends Thread {
     // constants
@@ -493,10 +499,28 @@ public final class ShutdownThread extends Thread {
                 }
 
                 try {
-                    radioOff = phone == null || !phone.isRadioOn();
-                    if (!radioOff) {
-                        Log.w(TAG, "Turning off radio...");
-                        phone.setRadio(false);
+                    radioOff = true;
+                    if (MSimTelephonyManager.getDefault().isMultiSimEnabled()) {
+                        final ITelephonyMSim mphone = ITelephonyMSim.Stub.asInterface(
+                                ServiceManager.checkService("phone_msim"));
+                        if (mphone != null) {
+                            //radio off indication should be sent for both subscriptions
+                            //in case of DSDS.
+                            for (int i = 0; i < MSimTelephonyManager.getDefault().
+                                    getPhoneCount(); i++) {
+                                radioOff = radioOff && !mphone.isRadioOn(i);
+                                if (mphone.isRadioOn(i)) {
+                                    Log.w(TAG, "Turning off radio on Subscription :" + i);
+                                    mphone.setRadio(false, i);
+                                }
+                            }
+                        }
+                    } else {
+                        radioOff = phone == null || !phone.isRadioOn();
+                        if (!radioOff) {
+                            Log.w(TAG, "Turning off radio...");
+                            phone.setRadio(false);
+                        }
                     }
                 } catch (RemoteException ex) {
                     Log.e(TAG, "RemoteException during radio shutdown", ex);
@@ -519,7 +543,18 @@ public final class ShutdownThread extends Thread {
                     }
                     if (!radioOff) {
                         try {
-                            radioOff = !phone.isRadioOn();
+                            boolean subRadioOff = true;
+                            if (MSimTelephonyManager.getDefault().isMultiSimEnabled()) {
+                                final ITelephonyMSim mphone = ITelephonyMSim.Stub.asInterface(
+                                        ServiceManager.checkService("phone_msim"));
+                                for (int i = 0; i < MSimTelephonyManager.getDefault().
+                                        getPhoneCount(); i++) {
+                                    subRadioOff = subRadioOff && !mphone.isRadioOn(i);
+                                }
+                                radioOff = subRadioOff;
+                            } else {
+                                radioOff = !phone.isRadioOn();
+                            }
                         } catch (RemoteException ex) {
                             Log.e(TAG, "RemoteException during radio shutdown", ex);
                             radioOff = true;
@@ -535,7 +570,7 @@ public final class ShutdownThread extends Thread {
                             Log.e(TAG, "RemoteException during NFC shutdown", ex);
                             nfcOff = true;
                         }
-                        if (radioOff) {
+                        if (nfcOff) {
                             Log.i(TAG, "NFC turned off.");
                         }
                     }
@@ -568,6 +603,9 @@ public final class ShutdownThread extends Thread {
      * @param reason reason for reboot
      */
     public static void rebootOrShutdown(boolean reboot, String reason) {
+        // Oem specific shutdown
+        deviceRebootOrShutdown(reboot, reason);
+
         if (reboot) {
             Log.i(TAG, "Rebooting, reason: " + reason);
             try {
@@ -596,4 +634,28 @@ public final class ShutdownThread extends Thread {
         Log.i(TAG, "Performing low-level shutdown...");
         PowerManagerService.lowLevelShutdown();
     }
+
+    private static void deviceRebootOrShutdown(boolean reboot, String reason) {
+
+        Class<?> cl;
+        String deviceShutdownClassName = "com.android.server.power.ShutdownOem";
+
+        try{
+            cl = Class.forName(deviceShutdownClassName);
+            Method m;
+            try {
+                m = cl.getMethod("rebootOrShutdown", new Class[]{boolean.class, String.class});
+                m.invoke(cl.newInstance(), reboot, reason);
+
+            } catch (NoSuchMethodException ex) {
+                //Method not found.
+            } catch (Exception ex) {
+                //Unknown exception
+            }
+        }catch(ClassNotFoundException e){
+        //Classnotfound!
+        }catch(Exception e){
+        //Unknown exception
+        }
+     }
 }

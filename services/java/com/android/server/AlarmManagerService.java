@@ -19,6 +19,7 @@ package com.android.server;
 import android.app.Activity;
 import android.app.ActivityManagerNative;
 import android.app.AlarmManager;
+import android.app.AppOpsManager;
 import android.app.IAlarmManager;
 import android.app.PendingIntent;
 import android.content.BroadcastReceiver;
@@ -105,6 +106,8 @@ class AlarmManagerService extends IAlarmManager.Stub {
     private final ResultReceiver mResultReceiver = new ResultReceiver();
     private final PendingIntent mTimeTickSender;
     private final PendingIntent mDateChangeSender;
+
+    private final AppOpsManager mAppOps;
 
     private static final class InFlight extends Intent {
         final PendingIntent mPendingIntent;
@@ -197,6 +200,8 @@ class AlarmManagerService extends IAlarmManager.Stub {
         } else {
             Slog.w(TAG, "Failed to open alarm driver. Falling back to a handler.");
         }
+
+        mAppOps = (AppOpsManager)mContext.getSystemService(Context.APP_OPS_SERVICE);
     }
     
     protected void finalize() throws Throwable {
@@ -217,6 +222,24 @@ class AlarmManagerService extends IAlarmManager.Stub {
             Slog.w(TAG, "set/setRepeating ignored because there is no intent");
             return;
         }
+
+        boolean wakeupFiltered = false;
+        if ((type == AlarmManager.RTC_WAKEUP
+                        || type == AlarmManager.ELAPSED_REALTIME_WAKEUP)
+                && mAppOps.checkOpNoThrow(AppOpsManager.OP_ALARM_WAKEUP,
+                        operation.getCreatorUid(),
+                        operation.getCreatorPackage())
+                != AppOpsManager.MODE_ALLOWED) {
+
+            if (type == AlarmManager.RTC_WAKEUP) {
+                type = AlarmManager.RTC;
+            } else {
+                type = AlarmManager.ELAPSED_REALTIME;
+            }
+
+            wakeupFiltered = true;
+        }
+
         synchronized (mLock) {
             Alarm alarm = new Alarm();
             alarm.type = type;
@@ -225,7 +248,16 @@ class AlarmManagerService extends IAlarmManager.Stub {
             alarm.operation = operation;
 
             // Remove this alarm if already scheduled.
-            removeLocked(operation);
+            removeNoWakeupLocked(operation);
+            final boolean foundExistingWakeup = removeWakeupLocked(operation);
+
+            // note AppOp for accounting purposes
+            // skip if the alarm already existed
+            if (!foundExistingWakeup && wakeupFiltered) {
+                mAppOps.noteOpNoThrow(AppOpsManager.OP_ALARM_WAKEUP,
+                        operation.getCreatorUid(),
+                        operation.getCreatorPackage());
+            }
 
             if (localLOGV) Slog.v(TAG, "set: " + alarm);
 
@@ -344,21 +376,37 @@ class AlarmManagerService extends IAlarmManager.Stub {
         removeLocked(mElapsedRealtimeAlarms, operation);
     }
 
-    private void removeLocked(ArrayList<Alarm> alarmList,
+    private boolean removeWakeupLocked(PendingIntent operation) {
+        final boolean rtcwake = removeLocked(mRtcWakeupAlarms, operation);
+        final boolean realtimewake = removeLocked(mElapsedRealtimeWakeupAlarms, operation);
+
+        return rtcwake || realtimewake;
+    }
+
+    private void removeNoWakeupLocked(PendingIntent operation) {
+        removeLocked(mRtcAlarms, operation);
+        removeLocked(mElapsedRealtimeAlarms, operation);
+    }
+
+    private boolean removeLocked(ArrayList<Alarm> alarmList,
             PendingIntent operation) {
         if (alarmList.size() <= 0) {
-            return;
+            return false;
         }
 
         // iterator over the list removing any it where the intent match
         Iterator<Alarm> it = alarmList.iterator();
         
+        boolean found = false;
         while (it.hasNext()) {
             Alarm alarm = it.next();
             if (alarm.operation.equals(operation)) {
+                found = true;
                 it.remove();
             }
         }
+
+        return found;
     }
 
     public void removeLocked(String packageName) {
@@ -862,6 +910,10 @@ class AlarmManagerService extends IAlarmManager.Stub {
                                 fs.numWakeup++;
                                 ActivityManagerNative.noteWakeupAlarm(
                                         alarm.operation);
+                                // AppOps accounting
+                                mAppOps.noteOpNoThrow(AppOpsManager.OP_ALARM_WAKEUP,
+                                        alarm.operation.getCreatorUid(),
+                                        alarm.operation.getCreatorPackage());
                             }
                         } catch (PendingIntent.CanceledException e) {
                             if (alarm.repeatInterval > 0) {
@@ -956,16 +1008,12 @@ class AlarmManagerService extends IAlarmManager.Stub {
         }
         
         public void scheduleTimeTickEvent() {
-            Calendar calendar = Calendar.getInstance();
             final long currentTime = System.currentTimeMillis();
-            calendar.setTimeInMillis(currentTime);
-            calendar.add(Calendar.MINUTE, 1);
-            calendar.set(Calendar.SECOND, 0);
-            calendar.set(Calendar.MILLISECOND, 0);
+            final long nextTime = 60000 * ((currentTime / 60000) + 1);
 
             // Schedule this event for the amount of time that it would take to get to
             // the top of the next minute.
-            final long tickEventDelay = calendar.getTimeInMillis() - currentTime;
+            final long tickEventDelay = nextTime - currentTime;
 
             set(AlarmManager.ELAPSED_REALTIME, SystemClock.elapsedRealtime() + tickEventDelay,
                     mTimeTickSender);

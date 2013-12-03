@@ -939,8 +939,9 @@ public class Preference implements Comparable<Preference>, OnDependencyChangeLis
      * @param preferenceScreen A {@link PreferenceScreen} whose hierarchy click
      *            listener should be called in the proper order (between other
      *            processing). May be null.
+     * @hide
      */
-    void performClick(PreferenceScreen preferenceScreen) {
+    public void performClick(PreferenceScreen preferenceScreen) {
         
         if (!isEnabled()) {
             return;
@@ -1311,10 +1312,18 @@ public class Preference implements Comparable<Preference>, OnDependencyChangeLis
         mDefaultValue = defaultValue;
     }
     
+    /**
+     * Returns whether the preference can be found in persistent storage
+     * @hide
+     */
+    protected boolean isPersisted() {
+        return getSharedPreferences().contains(mKey);
+    }
+
     private void dispatchSetInitialValue() {
         // By now, we know if we are persistent.
         final boolean shouldPersist = shouldPersist();
-        if (!shouldPersist || !getSharedPreferences().contains(mKey)) {
+        if (!shouldPersist || !isPersisted()) {
             if (mDefaultValue != null) {
                 onSetInitialValue(false, mDefaultValue);
             }

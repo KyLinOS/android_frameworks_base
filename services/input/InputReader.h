@@ -811,6 +811,10 @@ struct CookedPointerData {
     void clear();
     void copyFrom(const CookedPointerData& other);
 
+    inline const PointerCoords& pointerCoordsForId(uint32_t id) const {
+        return pointerCoords[idToIndex[id]];
+    }
+
     inline bool isHovering(uint32_t pointerIndex) {
         return hoveringIdBits.hasBit(pointerProperties[pointerIndex].id);
     }
@@ -1201,6 +1205,7 @@ protected:
         DEVICE_MODE_DISABLED, // input is disabled
         DEVICE_MODE_DIRECT, // direct mapping (touchscreen)
         DEVICE_MODE_UNSCALED, // unscaled mapping (touchpad)
+        DEVICE_MODE_NAVIGATION, // unscaled mapping with assist gesture (touch navigation)
         DEVICE_MODE_POINTER, // pointer mapping (pointer)
     };
     DeviceMode mDeviceMode;
@@ -1213,6 +1218,8 @@ protected:
         enum DeviceType {
             DEVICE_TYPE_TOUCH_SCREEN,
             DEVICE_TYPE_TOUCH_PAD,
+            DEVICE_TYPE_TOUCH_NAVIGATION,
+            DEVICE_TYPE_GESTURE_SENSOR,
             DEVICE_TYPE_POINTER,
         };
 
@@ -1281,6 +1288,14 @@ protected:
         DistanceCalibration distanceCalibration;
         bool haveDistanceScale;
         float distanceScale;
+
+        enum CoverageCalibration {
+            COVERAGE_CALIBRATION_DEFAULT,
+            COVERAGE_CALIBRATION_NONE,
+            COVERAGE_CALIBRATION_BOX,
+        };
+
+        CoverageCalibration coverageCalibration;
 
         inline void applySizeScaleAndBias(float* outSize) const {
             if (haveSizeScale) {
@@ -1757,10 +1772,11 @@ private:
         float highScale;  // scale factor from raw to normalized values of high split
         float highOffset; // offset to add after scaling for normalization of high split
 
-        float min;     // normalized inclusive minimum
-        float max;     // normalized inclusive maximum
-        float flat;    // normalized flat region size
-        float fuzz;    // normalized error tolerance
+        float min;        // normalized inclusive minimum
+        float max;        // normalized inclusive maximum
+        float flat;       // normalized flat region size
+        float fuzz;       // normalized error tolerance
+        float resolution; // normalized resolution in units/mm
 
         float filter;  // filter out small variations of this size
         float currentValue; // current value
@@ -1771,7 +1787,7 @@ private:
         void initialize(const RawAbsoluteAxisInfo& rawAxisInfo, const AxisInfo& axisInfo,
                 bool explicitlyMapped, float scale, float offset,
                 float highScale, float highOffset,
-                float min, float max, float flat, float fuzz) {
+                float min, float max, float flat, float fuzz, float resolution) {
             this->rawAxisInfo = rawAxisInfo;
             this->axisInfo = axisInfo;
             this->explicitlyMapped = explicitlyMapped;
@@ -1783,6 +1799,7 @@ private:
             this->max = max;
             this->flat = flat;
             this->fuzz = fuzz;
+            this->resolution = resolution;
             this->filter = 0;
             resetValue();
         }
@@ -1810,6 +1827,11 @@ private:
             float newValue, float currentValue, float thresholdValue);
 
     static bool isCenteredAxis(int32_t axis);
+    static int32_t getCompatAxis(int32_t axis);
+
+    static void addMotionRange(int32_t axisId, const Axis& axis, InputDeviceInfo* info);
+    static void setPointerCoordsAxisValue(PointerCoords* pointerCoords, int32_t axis,
+            float value);
 };
 
 } // namespace android

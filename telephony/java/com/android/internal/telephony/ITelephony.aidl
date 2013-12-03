@@ -42,7 +42,7 @@ interface ITelephony {
      * Place a call to the specified number.
      * @param number the number to be called.
      */
-    void call(String number);
+    void call(String callingPackage, String number);
 
     /**
      * Toggle between 3G and LTE (NT_MODE_CDMA, NT_MODE_GLOBAL)
@@ -152,6 +152,29 @@ interface ITelephony {
     boolean supplyPin(String pin);
 
     /**
+     * Supply a pin to unlock the SIM.  Blocks until a result is determined.
+     * Returns a specific success/error code.
+     * @param pin The pin to check.
+     * @return Phone.PIN_RESULT_SUCCESS on success. Otherwise error code
+     */
+    int supplyPinReportResult(String pin);
+
+    /**
+     * Supply puk to unlock the SIM and set SIM pin to new pin.
+     * Blocks until a result is determined.
+     * Returns a specific success/error code.
+     * @param puk The puk to check
+     *        pin The pin to check.
+     * @return Phone.PIN_RESULT_SUCCESS on success. Otherwise error code
+     */
+    int supplyPukReportResult(String puk, String pin);
+
+    /**
+     * Gets the number of attempts remaining for PIN1/PUK1 unlock.
+     */
+    int getIccPin1RetryCount();
+
+    /**
      * Supply puk to unlock the SIM and set SIM pin to new pin.
      *  Blocks until a result is determined.
      * @param puk The puk to check.
@@ -178,6 +201,11 @@ interface ITelephony {
      * Set the radio to on or off
      */
     boolean setRadio(boolean turnOn);
+
+    /**
+     * Set the radio to on or off unconditionally
+     */
+    boolean setRadioPower(boolean turnOn);
 
     /**
      * Request to update location information in service state
@@ -224,7 +252,7 @@ interface ITelephony {
     /**
      * Returns the neighboring cell information of the device.
      */
-    List<NeighboringCellInfo> getNeighboringCellInfo();
+    List<NeighboringCellInfo> getNeighboringCellInfo(String callingPkg);
 
      int getCallState();
      int getDataActivity();
@@ -267,9 +295,19 @@ interface ITelephony {
     int getVoiceMessageCount();
 
     /**
-      * Returns the network type
+      * Returns the network type for data transmission
       */
     int getNetworkType();
+
+    /**
+      * Returns the network type for data transmission
+      */
+    int getDataNetworkType();
+
+    /**
+      * Returns the network type for voice
+      */
+    int getVoiceNetworkType();
 
     /**
      * Return true if an ICC card is present
@@ -290,6 +328,11 @@ interface ITelephony {
      * Returns the all observed cell information of the device.
      */
     List<CellInfo> getAllCellInfo();
+
+    /**
+     * Sets minimum time in milli-seconds between onCellInfoChanged
+     */
+    void setCellInfoListRate(int rateInMillis);
 
     int getLteOnGsmMode();
 }

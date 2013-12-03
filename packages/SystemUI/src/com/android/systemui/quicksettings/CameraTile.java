@@ -28,7 +28,6 @@ import android.view.View;
 import android.view.ViewParent;
 import android.view.WindowManager;
 import android.widget.FrameLayout;
-import android.widget.TextView;
 import android.widget.Toast;
 
 import java.io.File;
@@ -48,7 +47,7 @@ public class CameraTile extends QuickSettingsTile {
     private static final int CAMERA_ID = 0;
 
     private Handler mHandler;
-    private TextView mTextView;
+    private View mIconContainer;
     private FrameLayout mSurfaceLayout;
     private SurfaceView mSurfaceView;
     private View mFlashView;
@@ -126,11 +125,13 @@ public class CameraTile extends QuickSettingsTile {
             mCamera.setParameters(mParams);
             updateOrientation();
 
+            final PanelView panel = getContainingPanel();
+            final View parent = (View) mContainer.getParent();
+
             mHandler.postDelayed(new Runnable() {
                 @Override
                 public void run() {
-                    final PanelView panel = getContainingPanel();
-                    if (panel != null && panel.isFullyExpanded()) {
+                    if (panel.isFullyExpanded() && parent.getScaleX() == 1) {
                         mHandler.postDelayed(this, 100);
                     } else {
                         mHandler.post(mReleaseCameraRunnable);
@@ -138,7 +139,7 @@ public class CameraTile extends QuickSettingsTile {
                 }
             }, 100);
 
-            mTextView.setVisibility(View.GONE);
+            mIconContainer.setVisibility(View.GONE);
             mSurfaceView = new CameraPreview(mContext, mCamera);
             mSurfaceView.setVisibility(View.VISIBLE);
             mSurfaceLayout.addView(mSurfaceView, 0);
@@ -225,7 +226,7 @@ public class CameraTile extends QuickSettingsTile {
             mCameraStarted = false;
             mCameraOrientationListener.disable();
 
-            mTextView.setVisibility(View.VISIBLE);
+            mIconContainer.setVisibility(View.VISIBLE);
             mSurfaceView.setVisibility(View.GONE);
             mSurfaceLayout.removeView(mSurfaceView);
             mSurfaceView = null;
@@ -244,6 +245,7 @@ public class CameraTile extends QuickSettingsTile {
     public CameraTile(Context context, QuickSettingsController qsc, Handler handler) {
         super(context, qsc, R.layout.quick_settings_tile_camera);
         mHandler = handler;
+        mLabel = mContext.getString(R.string.quick_settings_camera_label);
 
         String imageFileNameFormat = DEFAULT_IMAGE_FILE_NAME_FORMAT;
         try {
@@ -276,7 +278,7 @@ public class CameraTile extends QuickSettingsTile {
             }
         };
 
-        mTextView = (TextView) mTile.findViewById(R.id.camera_text);
+        mIconContainer = mTile.findViewById(R.id.icon_container);
         mSurfaceLayout = (FrameLayout) mTile.findViewById(R.id.camera_surface_holder);
         mFlashView = mTile.findViewById(R.id.camera_surface_flash_overlay);
 

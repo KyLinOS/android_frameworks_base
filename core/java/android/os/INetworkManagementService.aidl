@@ -1,6 +1,10 @@
 /* //device/java/android/android/os/INetworkManagementService.aidl
 **
 ** Copyright 2007, The Android Open Source Project
+** Copyright (c) 2010-2013, The Linux Foundation. All rights reserved.
+**
+** Not a Contribution. Apache license notifications and license are
+** retained for attribution purposes only.
 **
 ** Licensed under the Apache License, Version 2.0 (the "License");
 ** you may not use this file except in compliance with the License.
@@ -152,16 +156,6 @@ interface INetworkManagementService
     boolean isTetheringStarted();
 
     /**
-     * Start bluetooth reverse tethering services
-     */
-    void startReverseTethering(in String iface);
-
-    /**
-     * Stop currently running bluetooth reserse tethering services
-     */
-    void stopReverseTethering();
-
-    /**
      * Tethers the specified interface
      */
     void tetherInterface(String iface);
@@ -197,6 +191,16 @@ interface INetworkManagementService
      *  Disables Network Address Translation between two interfaces.
      */
     void disableNat(String internalInterface, String externalInterface);
+
+    /**
+     * Add an upstream IPv6 interface
+     */
+    void addUpstreamV6Interface(String iface);
+
+    /**
+     * Remove an upstream IPv6 interface
+     */
+    void removeUpstreamV6Interface(String iface);
 
     /**
      ** PPPD
@@ -306,23 +310,6 @@ interface INetworkManagementService
     boolean isBandwidthControlEnabled();
 
     /**
-     * Configures bandwidth throttling on an interface.
-     */
-    void setInterfaceThrottle(String iface, int rxKbps, int txKbps);
-
-    /**
-     * Returns the currently configured RX throttle values
-     * for the specified interface
-     */
-    int getInterfaceRxThrottle(String iface);
-
-    /**
-     * Returns the currently configured TX throttle values
-     * for the specified interface
-     */
-    int getInterfaceTxThrottle(String iface);
-
-    /**
      * Sets idletimer for an interface.
      *
      * This either initializes a new idletimer or increases its
@@ -351,7 +338,7 @@ interface INetworkManagementService
     /**
      * Bind name servers to an interface in the DNS resolver.
      */
-    void setDnsServersForInterface(String iface, in String[] servers);
+    void setDnsServersForInterface(String iface, in String[] servers, String domains);
 
     /**
      * Flush the DNS cache associated with the default interface.
@@ -369,4 +356,67 @@ interface INetworkManagementService
     void setFirewallEgressSourceRule(String addr, boolean allow);
     void setFirewallEgressDestRule(String addr, int port, boolean allow);
     void setFirewallUidRule(int uid, boolean allow);
+
+    /**
+     * Set a process (pid) to use the name servers associated with the specified interface.
+     */
+    void setDnsInterfaceForPid(String iface, int pid);
+
+    /**
+     * Clear a process (pid) from being associated with an interface.
+     */
+    void clearDnsInterfaceForPid(int pid);
+
+    /**
+     * Start the clatd (464xlat) service
+     */
+    void startClatd(String interfaceName);
+
+    /**
+     * Stop the clatd (464xlat) service
+     */
+    void stopClatd();
+
+    /**
+     * Determine whether the clatd (464xlat) service has been started
+     */
+    boolean isClatdStarted();
+
+   /**
+    ** Policy Routing
+    **/
+
+   /**
+    * Replaces a prexisting identical route with the new metric specified.
+    * Adds a new route if none existed before.
+    */
+   boolean addRouteWithMetric(String iface, int metric, in RouteInfo route);
+
+   /**
+    * Replaces a source policy route for the given iface in a custom routing
+    * table denoted by routeId, if it already exists.
+    * Adds a new route if it did not exist.
+    */
+   boolean replaceSrcRoute(String iface, in byte[] ip, in byte[] gateway, int routeId);
+
+   /**
+    * Deletes a source policy route for the given route identifier and source
+    * address from a custom routing table denoted by routeId
+    */
+   boolean delSrcRoute(in byte[] ip, int routeId);
+
+   /**
+     * Set SAP Channel Range
+    */
+    void setChannelRange(int startchannel, int endchannel, int band);
+
+    /**
+     * Get SAP Current Operating Channel
+    */
+    int getSapOperatingChannel();
+
+    /**
+     * Get SAP Auto Channel Selection
+    */
+    int getSapAutoChannelSelection();
 }

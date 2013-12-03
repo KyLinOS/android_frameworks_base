@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2013 MoKee OpenSource Project
+ * Copyright (C) 2013 The KylinMod Open Source Project
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -41,9 +41,6 @@ public class FChargeTile extends QuickSettingsTile {
 
     public static QuickSettingsTile mInstance;
 
-    public static final String FAST_CHARGE_DIR = "/sys/kernel/fast_charge";
-    public static final String FAST_CHARGE_FILE = "force_fast_charge";
-
     protected boolean enabled = false;
 
     public static QuickSettingsTile getInstance(Context context, final QuickSettingsController qsc, Handler handler) {
@@ -62,13 +59,19 @@ public class FChargeTile extends QuickSettingsTile {
             public void onClick(View v) {
                 try {
                         enabled = !isFastChargeOn();
-                        File fastcharge = new File(FAST_CHARGE_DIR, FAST_CHARGE_FILE);
-                        FileWriter fwriter = new FileWriter(fastcharge);
-                        BufferedWriter bwriter = new BufferedWriter(fwriter);
-                        bwriter.write(enabled ? "1" : "0");
-                        bwriter.close();
-                        Settings.System.putInt(mContext.getContentResolver(),
-                             Settings.System.FCHARGE_ENABLED, enabled ? 1 : 0);
+                        String fchargePath = mContext.getResources()
+                                .getString(com.kylin.internal.R.string.config_fastChargePath);
+                        if (!fchargePath.isEmpty()) {
+                            File fastcharge = new File(fchargePath);
+                            if (fastcharge.exists()) {
+                                FileWriter fwriter = new FileWriter(fastcharge);
+                                BufferedWriter bwriter = new BufferedWriter(fwriter);
+                                bwriter.write(enabled ? "1" : "0");
+                                bwriter.close();
+                                Settings.System.putInt(mContext.getContentResolver(),
+                                     Settings.System.FCHARGE_ENABLED, enabled ? 1 : 0);
+                            }
+                        }
                     } catch (IOException e) {
                         Log.e("FChargeToggle", "Couldn't write fast_charge file");
                         Settings.System.putInt(mContext.getContentResolver(),
@@ -90,18 +93,26 @@ public class FChargeTile extends QuickSettingsTile {
 
     public boolean isFastChargeOn() {
         try {
-            File fastcharge = new File(FAST_CHARGE_DIR, FAST_CHARGE_FILE);
-            FileReader reader = new FileReader(fastcharge);
-            BufferedReader breader = new BufferedReader(reader);
-            String line = breader.readLine();
-            breader.close();
-            return (line.equals("1"));
+            String fchargePath = mContext.getResources()
+                    .getString(com.kylin.internal.R.string.config_fastChargePath);
+            if (!fchargePath.isEmpty()) {
+                File fastcharge = new File(fchargePath);
+                if (fastcharge.exists()) {
+                    FileReader reader = new FileReader(fastcharge);
+                    BufferedReader breader = new BufferedReader(reader);
+                    String line = breader.readLine();
+                    breader.close();
+                    Settings.System.putInt(mContext.getContentResolver(),
+                            Settings.System.FCHARGE_ENABLED, line.equals("1") ? 1 : 0);
+                    return (line.equals("1"));
+                }
+            }
         } catch (IOException e) {
             Log.e("FChargeToggle", "Couldn't read fast_charge file");
             Settings.System.putInt(mContext.getContentResolver(),
                  Settings.System.FCHARGE_ENABLED, 0);
-            return false;
         }
+        return false;
     }
 
     private void updateTileState() {

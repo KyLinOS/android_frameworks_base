@@ -30,6 +30,7 @@ import android.graphics.Rect;
 import android.os.Bundle;
 import android.os.IBinder;
 import android.os.Parcelable;
+import android.os.PowerManager;
 import android.os.SystemClock;
 import android.os.SystemProperties;
 import android.os.Vibrator;
@@ -59,6 +60,7 @@ public class KeyguardViewManager {
     private final static boolean DEBUG = KeyguardViewMediator.DEBUG;
     private static String TAG = "KeyguardViewManager";
     public static boolean USE_UPPER_CASE = true;
+    public final static String IS_SWITCHING_USER = "is_switching_user";
 
     // Timeout used for keypresses
     static final int DIGIT_PRESS_WAKE_MILLIS = 5000;
@@ -148,19 +150,12 @@ public class KeyguardViewManager {
         @Override
         protected void onConfigurationChanged(Configuration newConfig) {
             super.onConfigurationChanged(newConfig);
-            post(new Runnable() {
-                @Override
-                public void run() {
-                    synchronized (KeyguardViewManager.this) {
-                        if (mKeyguardHost.getVisibility() == View.VISIBLE) {
-                            // only propagate configuration messages if we're currently showing
-                            maybeCreateKeyguardLocked(shouldEnableScreenRotation(), true, null);
-                        } else {
-                            if (DEBUG) Log.v(TAG, "onConfigurationChanged: view not visible");
-                        }
-                    }
-                }
-            });
+            if (mKeyguardHost.getVisibility() == View.VISIBLE) {
+                // only propagate configuration messages if we're currently showing
+                maybeCreateKeyguardLocked(shouldEnableScreenRotation(), true, null);
+            } else {
+                if (DEBUG) Log.v(TAG, "onConfigurationChanged: view not visible");
+            }
         }
 
         @Override
@@ -186,6 +181,14 @@ public class KeyguardViewManager {
     public boolean handleKeyDown(int keyCode, KeyEvent event) {
         if (event.getRepeatCount() == 0) {
             mUnlockKeyDown = true;
+            // We check for Camera key press in handleKeyDown, because
+            // it gives us "instant" unlock, when user depresses
+            // the button.
+            if (keyCode == KeyEvent.KEYCODE_CAMERA) {
+                if (mKeyguardView.handleCameraKey()) {
+                    return true;
+                }
+            }
         }
         if (event.isLongPress()) {
             String action = null;
@@ -261,6 +264,9 @@ public class KeyguardViewManager {
         } else if ("SOUND".equals(uri)) {
             toggleSilentMode(context);
             return true;
+        } else if ("SLEEP".equals(uri)) {
+            sendToSleep(context);
+            return true;
         }
 
         return false;
@@ -313,6 +319,12 @@ public class KeyguardViewManager {
         return pattern;
     }
 
+    private static void sendToSleep(Context context) {
+        final PowerManager pm;
+        pm = (PowerManager) context.getSystemService(Context.POWER_SERVICE);
+        pm.goToSleep(SystemClock.uptimeMillis());
+    }
+
     SparseArray<Parcelable> mStateContainer = new SparseArray<Parcelable>();
 
     private void maybeCreateKeyguardLocked(boolean enableScreenRotation, boolean force,
@@ -345,6 +357,8 @@ public class KeyguardViewManager {
                     stretch, stretch, type, flags, PixelFormat.TRANSLUCENT);
             lp.softInputMode = WindowManager.LayoutParams.SOFT_INPUT_ADJUST_RESIZE;
             lp.windowAnimations = com.android.internal.R.style.Animation_LockScreen;
+            lp.screenOrientation = enableScreenRotation ?
+                    ActivityInfo.SCREEN_ORIENTATION_USER : ActivityInfo.SCREEN_ORIENTATION_NOSENSOR;
             lp.flags |= WindowManager.LayoutParams.FLAG_HARDWARE_ACCELERATED;
             lp.privateFlags |= WindowManager.LayoutParams.PRIVATE_FLAG_FORCE_HARDWARE_ACCELERATED;
             lp.privateFlags |= WindowManager.LayoutParams.PRIVATE_FLAG_SET_NEEDS_MENU_KEY;
@@ -380,6 +394,8 @@ public class KeyguardViewManager {
         mKeyguardView = (KeyguardHostView) view.findViewById(R.id.keyguard_host_view);
         mKeyguardView.setLockPatternUtils(mLockPatternUtils);
         mKeyguardView.setViewMediatorCallback(mViewMediatorCallback);
+        mKeyguardView.initializeSwitchingUserState(options != null &&
+                options.getBoolean(IS_SWITCHING_USER));
 
         // HACK
         // The keyguard view will have set up window flags in onFinishInflate before we set

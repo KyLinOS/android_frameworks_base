@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2013 MoKee OpenSource Project
+ * Copyright (C) 2013 The KylinMod Open Source Project
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -147,28 +147,6 @@ public class PieControlPanel extends FrameLayout implements StatusBarPanel, OnNa
     }
 
     public void bumpConfiguration() {
-        if (Settings.System.getIntForUser(mContext.getContentResolver(),
-                    Settings.System.PIE_STICK, 0, UserHandle.USER_CURRENT) == 1) {
-
-            // Get original offset
-            int gravityIndex = findGravityOffset(convertPieGravitytoGravity(
-                    Settings.System.getIntForUser(mContext.getContentResolver(),
-                    Settings.System.PIE_GRAVITY, 3, UserHandle.USER_CURRENT)));
-            
-            // Orient Pie to that place
-            reorient(gravityArray[gravityIndex], false);
-
-            // Now re-orient it for landscape orientation
-            switch(mDisplay.getRotation()) {
-                case Surface.ROTATION_270:
-                    reorient(gravityArray[gravityIndex + 1], false);
-                    break;
-                case Surface.ROTATION_90:
-                    reorient(gravityArray[gravityIndex - 1], false);
-                    break;
-            }
-        }
-
         show(false);
         if (mPieControl != null) mPieControl.onConfigurationChanged();
     }
@@ -207,22 +185,6 @@ public class PieControlPanel extends FrameLayout implements StatusBarPanel, OnNa
         show(mShowing);
         if (storeSetting) {
             int gravityOffset = mOrientation;
-            if (Settings.System.getIntForUser(mContext.getContentResolver(),
-                    Settings.System.PIE_STICK, 0, UserHandle.USER_CURRENT) == 1) {
-
-                gravityOffset = findGravityOffset(mOrientation);
-                switch(mDisplay.getRotation()) {
-                    case Surface.ROTATION_270:
-                        gravityOffset = gravityArray[gravityOffset - 1];
-                        break;
-                    case Surface.ROTATION_90:
-                        gravityOffset = gravityArray[gravityOffset + 1];
-                        break;
-                    default:
-                        gravityOffset = mOrientation;
-                        break;
-                }
-            }
             Settings.System.putIntForUser(mContext.getContentResolver(),
                     Settings.System.PIE_GRAVITY, convertGravitytoPieGravity(gravityOffset), UserHandle.USER_CURRENT);
         }
@@ -308,7 +270,7 @@ public class PieControlPanel extends FrameLayout implements StatusBarPanel, OnNa
 
     private Intent getAssistIntent() {
         Intent intent = ((SearchManager) mContext.getSystemService(Context.SEARCH_SERVICE))
-                .getAssistIntent(mContext, UserHandle.USER_CURRENT);
+                .getAssistIntent(mContext, true, UserHandle.USER_CURRENT);
         return intent;
     }
 
@@ -355,14 +317,14 @@ public class PieControlPanel extends FrameLayout implements StatusBarPanel, OnNa
     }
 
     public void injectKeyDelayed(int keycode){
-    	mInjectKeycode = keycode;
+        mInjectKeycode = keycode;
         mDownTime = SystemClock.uptimeMillis();
-    	mHandler.removeCallbacks(onInjectKeyDelayed);
-      	mHandler.postDelayed(onInjectKeyDelayed, 100);
+        mHandler.removeCallbacks(onInjectKeyDelayed);
+        mHandler.postDelayed(onInjectKeyDelayed, 100);
     }
 
     final Runnable onInjectKeyDelayed = new Runnable() {
-    	public void run() {
+        public void run() {
             final long eventTime = SystemClock.uptimeMillis();
             InputManager.getInstance().injectInputEvent(
                     new KeyEvent(mDownTime, eventTime - 100, KeyEvent.ACTION_DOWN, mInjectKeycode, 0),
@@ -370,7 +332,7 @@ public class PieControlPanel extends FrameLayout implements StatusBarPanel, OnNa
             InputManager.getInstance().injectInputEvent(
                     new KeyEvent(mDownTime, eventTime - 50, KeyEvent.ACTION_UP, mInjectKeycode, 0),
                     InputManager.INJECT_INPUT_EVENT_MODE_ASYNC);
-    	}
+        }
     };
 
     public boolean getKeyguardStatus() {

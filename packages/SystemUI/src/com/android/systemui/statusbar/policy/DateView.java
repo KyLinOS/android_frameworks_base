@@ -23,7 +23,6 @@ import android.content.ContentUris;
 import android.content.Context;
 import android.content.Intent;
 import android.content.IntentFilter;
-import android.graphics.Canvas;
 import android.net.Uri;
 import android.provider.CalendarContract;
 import android.text.format.DateFormat;
@@ -32,17 +31,18 @@ import android.view.View;
 import android.view.View.OnClickListener;
 import android.view.View.OnLongClickListener;
 import android.view.ViewParent;
-import android.widget.RelativeLayout;
 import android.widget.TextView;
 
 import com.android.systemui.R;
 
+import java.text.SimpleDateFormat;
 import java.util.Date;
+import java.util.Locale;
+
+import libcore.icu.ICU;
 
 public class DateView extends TextView implements OnClickListener, OnLongClickListener {
     private static final String TAG = "DateView";
-
-    private RelativeLayout mParent;
 
     private boolean mAttachedToWindow;
     private boolean mWindowVisible;
@@ -54,7 +54,8 @@ public class DateView extends TextView implements OnClickListener, OnLongClickLi
             final String action = intent.getAction();
             if (Intent.ACTION_TIME_TICK.equals(action)
                     || Intent.ACTION_TIME_CHANGED.equals(action)
-                    || Intent.ACTION_TIMEZONE_CHANGED.equals(action)) {
+                    || Intent.ACTION_TIMEZONE_CHANGED.equals(action)
+                    || Intent.ACTION_LOCALE_CHANGED.equals(action)) {
                 updateClock();
             }
         }
@@ -77,23 +78,7 @@ public class DateView extends TextView implements OnClickListener, OnLongClickLi
     protected void onDetachedFromWindow() {
         super.onDetachedFromWindow();
         mAttachedToWindow = false;
-        if (mParent != null) {
-            mParent.setOnClickListener(null);
-            mParent.setOnLongClickListener(null);
-            mParent = null;
-        }
         setUpdates();
-    }
-
-    @Override
-    protected void onDraw(Canvas canvas) {
-        if (mParent == null) {
-            mParent = (RelativeLayout) getParent();
-            mParent.setOnClickListener(this);
-            mParent.setOnLongClickListener(this);
-        }
-
-        super.onDraw(canvas);
     }
 
     @Override
@@ -116,6 +101,21 @@ public class DateView extends TextView implements OnClickListener, OnLongClickLi
     }
 
     protected void updateClock() {
+        /*
+        final String weekdayFormat = getContext().getString(R.string.system_ui_weekday_pattern);
+        final String dateFormat = getContext().getString(R.string.system_ui_date_pattern);
+        final Locale l = Locale.getDefault();
+        final Date now = new Date();
+        String weekdayFmt = ICU.getBestDateTimePattern(weekdayFormat, l.toString());
+        String dateFmt = ICU.getBestDateTimePattern(dateFormat, l.toString());
+
+        StringBuilder builder = new StringBuilder();
+        builder.append(new SimpleDateFormat(weekdayFmt, l).format(now));
+        builder.append("\n");
+        builder.append(new SimpleDateFormat(dateFmt, l).format(now));
+
+        setText(builder.toString());
+        */
         final String dateFormat = getContext().getString(R.string.abbrev_wday_month_day_no_year);
         setText(DateFormat.format(dateFormat, new Date()));
     }
@@ -145,6 +145,7 @@ public class DateView extends TextView implements OnClickListener, OnLongClickLi
                 filter.addAction(Intent.ACTION_TIME_TICK);
                 filter.addAction(Intent.ACTION_TIME_CHANGED);
                 filter.addAction(Intent.ACTION_TIMEZONE_CHANGED);
+                filter.addAction(Intent.ACTION_LOCALE_CHANGED);
                 mContext.registerReceiver(mIntentReceiver, filter, null, null);
                 updateClock();
             } else {
@@ -154,6 +155,11 @@ public class DateView extends TextView implements OnClickListener, OnLongClickLi
     }
 
     private void collapseStartActivity(Intent what) {
+        // don't do anything if the activity can't be resolved (e.g. app disabled)
+        if (getContext().getPackageManager().resolveActivity(what, 0) == null) {
+            return;
+        }
+
         // collapse status bar
         StatusBarManager statusBarManager = (StatusBarManager) getContext().getSystemService(
                 Context.STATUS_BAR_SERVICE);

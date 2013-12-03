@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2010 MoKee OpenSource Project
+ * Copyright (C) 2010 The KylinMod Open Source Project
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -47,18 +47,18 @@ public class PieStatusPanel {
     public static final int NOTIFICATIONS_PANEL = 0;
     public static final int QUICK_SETTINGS_PANEL = 1;
 
-    private Context mContext;
-    private View mContentHeader;
-    private ScrollView mScrollView;
+    private static Context mContext;
+    private static View mContentHeader;
+    private static ScrollView mScrollView;
     private View mClearButton;
     private View mContentFrame;
     private View mHaloButton;
     private View mQuickSettingsButton;
     private View mNotificationButton;
-    private QuickSettingsContainerView mQS;
-    private NotificationRowLayout mNotificationPanel;
-    private PieControlPanel mPanel;
-    private ViewGroup[] mPanelParents = new ViewGroup[2];
+    private static QuickSettingsContainerView mQS;
+    private static NotificationRowLayout mNotificationPanel;
+    private static PieControlPanel mPanel;
+    private static ViewGroup[] mPanelParents = new ViewGroup[2];
 
     private Handler mHandler = new Handler();
     private NotificationData mNotificationData;
@@ -66,7 +66,7 @@ public class PieStatusPanel {
 
     private boolean mHaloActive, mHaloEnabled;
 
-    private int mCurrentViewState = -1;
+    private static int mCurrentViewState = -1;
     private int mFlipViewState = -1;
 
     public PieStatusPanel(Context context, PieControlPanel panel) {
@@ -200,7 +200,7 @@ public class PieStatusPanel {
                         break;
                     case MotionEvent.ACTION_UP:
                         if(!hasScrolled) {
-                            hidePanels(true);
+                            ResetPanels(true);
                         }
                         break;
                 }
@@ -307,6 +307,14 @@ public class PieStatusPanel {
         if (reset) mCurrentViewState = -1;
     }
 
+    public static void ResetPanels(boolean reset) {
+        if (mNotificationPanel != null && mQS != null) {
+            hidePanel(mNotificationPanel);
+            hidePanel(mQS);
+        }
+        if (reset) mCurrentViewState = -1;
+    }
+
     public void swapPanels() {
         hidePanels(false);
         if (mCurrentViewState == NOTIFICATIONS_PANEL) {
@@ -318,7 +326,7 @@ public class PieStatusPanel {
         }
     }
 
-    private ViewGroup getPanelParent(View panel) {
+    private static ViewGroup getPanelParent(View panel) {
         if (((Integer)panel.getTag()).intValue() == NOTIFICATIONS_PANEL) {
             return mPanelParents[NOTIFICATIONS_PANEL];
         } else {
@@ -378,7 +386,7 @@ public class PieStatusPanel {
         updateContainer(true);
     }
 
-    private void hidePanel(View panel) {
+    public static void hidePanel(View panel) {
         ViewGroup parent = getPanelParent(panel);
         mScrollView.removeAllViews();
         parent.removeAllViews();
@@ -386,12 +394,12 @@ public class PieStatusPanel {
         updateContainer(false);
     }
 
-    private void updateContainer(boolean visible) {
+    private static void updateContainer(boolean visible) {
         mPanel.getBar().mContainer.setVisibility(visible ? View.VISIBLE : View.GONE);
         updatePanelConfiguration();
     }
 
-    public void updatePanelConfiguration() {
+    public static void updatePanelConfiguration() {
         int padding = mContext.getResources().getDimensionPixelSize(R.dimen.pie_panel_padding);
         mScrollView.setPadding(padding,0,padding,0);
         mContentHeader.setPadding(padding,0,padding,0);

@@ -29,9 +29,11 @@ import static com.android.internal.util.cm.QSConstants.TILE_GPS;
 import static com.android.internal.util.cm.QSConstants.TILE_LOCKSCREEN;
 import static com.android.internal.util.cm.QSConstants.TILE_LTE;
 import static com.android.internal.util.cm.QSConstants.TILE_MOBILEDATA;
+import static com.android.internal.util.cm.QSConstants.TILE_NETWORKADB;
 import static com.android.internal.util.cm.QSConstants.TILE_NETWORKMODE;
 import static com.android.internal.util.cm.QSConstants.TILE_NFC;
 import static com.android.internal.util.cm.QSConstants.TILE_PROFILE;
+import static com.android.internal.util.cm.QSConstants.TILE_PERFORMANCE_PROFILE;
 import static com.android.internal.util.cm.QSConstants.TILE_QUIETHOURS;
 import static com.android.internal.util.cm.QSConstants.TILE_RINGER;
 import static com.android.internal.util.cm.QSConstants.TILE_SCREENTIMEOUT;
@@ -55,6 +57,7 @@ import android.database.ContentObserver;
 import android.net.Uri;
 import android.os.Handler;
 import android.os.Message;
+import android.os.SystemProperties;
 import android.os.UserHandle;
 import android.provider.Settings;
 import android.text.TextUtils;
@@ -77,7 +80,9 @@ import com.android.systemui.quicksettings.InputMethodTile;
 import com.android.systemui.quicksettings.LteTile;
 import com.android.systemui.quicksettings.MobileNetworkTile;
 import com.android.systemui.quicksettings.MobileNetworkTypeTile;
+import com.android.systemui.quicksettings.NetworkAdbTile;
 import com.android.systemui.quicksettings.NfcTile;
+import com.android.systemui.quicksettings.PerformanceProfileTile;
 import com.android.systemui.quicksettings.PreferencesTile;
 import com.android.systemui.quicksettings.ProfileTile;
 import com.android.systemui.quicksettings.QuickSettingsTile;
@@ -99,6 +104,7 @@ import com.android.systemui.quicksettings.FChargeTile;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.HashSet;
+import java.util.List;
 
 public class QuickSettingsController {
     private static String TAG = "QuickSettingsController";
@@ -121,12 +127,15 @@ public class QuickSettingsController {
     private BroadcastReceiver mReceiver;
     private ContentObserver mObserver;
     public PhoneStatusBar mStatusBarService;
+    private final String mSettingsString;
+    private boolean mHideLiveTiles;
+    private boolean mHideLiveTileLabels;
 
     private InputMethodTile mIMETile;
 
     private static final int MSG_UPDATE_TILES = 1000;
 
-    public QuickSettingsController(Context context, QuickSettingsContainerView container, PhoneStatusBar statusBarService) {
+    public QuickSettingsController(Context context, QuickSettingsContainerView container, PhoneStatusBar statusBarService, String settings) {
         mContext = context;
         mContainerView = container;
         mHandler = new Handler() {
@@ -143,6 +152,7 @@ public class QuickSettingsController {
         };
         mStatusBarService = statusBarService;
         mQuickSettingsTiles = new ArrayList<QuickSettingsTile>();
+        mSettingsString = settings;
     }
 
     void loadTiles() {
@@ -154,6 +164,8 @@ public class QuickSettingsController {
         boolean bluetoothSupported = QSUtils.deviceSupportsBluetooth();
         boolean mobileDataSupported = QSUtils.deviceSupportsMobileData(mContext);
         boolean lteSupported = QSUtils.deviceSupportsLte(mContext);
+        boolean gpsSupported = QSUtils.deviceSupportsGps(mContext);
+        boolean torchSupported = QSUtils.deviceSupportsTorch(mContext);
 
         if (!bluetoothSupported) {
             TILES_DEFAULT.remove(TILE_BLUETOOTH);
@@ -169,11 +181,19 @@ public class QuickSettingsController {
             TILES_DEFAULT.remove(TILE_LTE);
         }
 
+        if (!gpsSupported) {
+            TILES_DEFAULT.remove(TILE_GPS);
+        }
+
+        if (!torchSupported) {
+            TILES_DEFAULT.remove(TILE_TORCH);
+        }
+
         // Read the stored list of tiles
         ContentResolver resolver = mContext.getContentResolver();
         LayoutInflater inflater = LayoutInflater.from(mContext);
         String tiles = Settings.System.getStringForUser(resolver,
-                Settings.System.QUICK_SETTINGS_TILES, UserHandle.USER_CURRENT);
+                mSettingsString, UserHandle.USER_CURRENT);
         if (tiles == null) {
             Log.i(TAG, "Default tiles being loaded");
             tiles = TextUtils.join(TILE_DELIMITER, TILES_DEFAULT);
@@ -198,7 +218,7 @@ public class QuickSettingsController {
             } else if (tile.equals(TILE_BLUETOOTH) && bluetoothSupported) {
                 qs = new BluetoothTile(mContext, this, mStatusBarService.mBluetoothController);
             } else if (tile.equals(TILE_BRIGHTNESS)) {
-                qs = new BrightnessTile(mContext, this, mHandler);
+                qs = new BrightnessTile(mContext, this);
             } else if (tile.equals(TILE_CAMERA) && cameraSupported) {
                 qs = new CameraTile(mContext, this, mHandler);
             } else if (tile.equals(TILE_RINGER)) {
@@ -228,6 +248,10 @@ public class QuickSettingsController {
                 if (QSUtils.systemProfilesEnabled(resolver)) {
                     qs = new ProfileTile(mContext, this);
                 }
+            } else if (tile.equals(TILE_PERFORMANCE_PROFILE)) {
+                if (QSUtils.deviceSupportsPerformanceProfiles(mContext)) {
+                    qs = new PerformanceProfileTile(mContext, this);
+                }
             } else if (tile.equals(TILE_NFC)) {
                 // User cannot add the NFC tile if the device does not support it
                 // No need to check again here
@@ -249,6 +273,11 @@ public class QuickSettingsController {
                 // User cannot add the fast charge tile if the device does not support it
                 // No need to check again here
                 qs = new FChargeTile(mContext, this, mHandler);
+            } else if (tile.equals(TILE_NETWORKADB)) {
+                mTileStatusUris.add(Settings.Global.getUriFor(Settings.Global.ADB_ENABLED));
+                if (QSUtils.adbEnabled(resolver)) {
+                    qs = new NetworkAdbTile(mContext, this);
+                }
             }
 
             if (qs != null) {
@@ -261,6 +290,10 @@ public class QuickSettingsController {
                     dockBatteryLoaded = true;
                 }
             }
+        }
+
+        if (mHideLiveTiles) {
+            return;
         }
 
         // Load the dynamic tiles
@@ -339,6 +372,11 @@ public class QuickSettingsController {
         loadTiles();
         setupBroadcastReceiver();
         setupContentObserver();
+        if (mHideLiveTileLabels) {
+            for (QuickSettingsTile t : mQuickSettingsTiles) {
+                t.setLabelVisibility(false);
+            }
+        }
     }
 
     void setupContentObserver() {
@@ -432,5 +470,13 @@ public class QuickSettingsController {
         for (QuickSettingsTile t : mQuickSettingsTiles) {
             t.updateResources();
         }
+    }
+
+    public void hideLiveTileLabels(boolean hide) {
+        mHideLiveTileLabels = hide;
+    }
+
+    public void hideLiveTiles(boolean hide) {
+        mHideLiveTiles = hide;
     }
 }

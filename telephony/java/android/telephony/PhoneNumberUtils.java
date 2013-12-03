@@ -1,5 +1,8 @@
 /*
  * Copyright (C) 2006 The Android Open Source Project
+ * Copyright (c) 2012-2013 The Linux Foundation. All rights reserved.
+ *
+ * Not a Contribution.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -26,6 +29,7 @@ import android.content.Context;
 import android.content.Intent;
 import android.database.Cursor;
 import android.location.CountryDetector;
+import android.location.Country;
 import android.net.Uri;
 import android.os.SystemProperties;
 import android.provider.Contacts;
@@ -33,9 +37,10 @@ import android.provider.ContactsContract;
 import android.text.Editable;
 import android.text.SpannableStringBuilder;
 import android.text.TextUtils;
-import android.util.Log;
+import android.telephony.Rlog;
 import android.util.SparseIntArray;
 
+import static com.android.internal.telephony.MSimConstants.SUBSCRIPTION_KEY;
 import static com.android.internal.telephony.TelephonyProperties.PROPERTY_ICC_OPERATOR_ISO_COUNTRY;
 import static com.android.internal.telephony.TelephonyProperties.PROPERTY_IDP_STRING;
 import static com.android.internal.telephony.TelephonyProperties.PROPERTY_OPERATOR_ISO_COUNTRY;
@@ -166,6 +171,12 @@ public class PhoneNumberUtils
         // TODO: We don't check for SecurityException here (requires
         // CALL_PRIVILEGED permission).
         if (scheme.equals("voicemail")) {
+            if (MSimTelephonyManager.getDefault().isMultiSimEnabled()) {
+                int subscription = intent.getIntExtra(SUBSCRIPTION_KEY,
+                        MSimTelephonyManager.getDefault().getDefaultSubscription());
+                return MSimTelephonyManager.getDefault()
+                        .getCompleteVoiceMailNumber(subscription);
+            }
             return TelephonyManager.getDefault().getCompleteVoiceMailNumber();
         }
 
@@ -358,7 +369,7 @@ public class PhoneNumberUtils
     }
 
     private static void log(String msg) {
-        Log.d(LOG_TAG, msg);
+        Rlog.d(LOG_TAG, msg);
     }
     /** index of the last character of the network portion
      *  (eg anything after is a post-dial string)
@@ -1688,9 +1699,27 @@ public class PhoneNumberUtils
         // to the list.
         number = extractNetworkPortionAlt(number);
 
-        // retrieve the list of emergency numbers
-        // check read-write ecclist property first
-        String numbers = SystemProperties.get("ril.ecclist");
+        String numbers = "";
+        for (int i = 0; i < MSimTelephonyManager.getDefault().getPhoneCount(); i++) {
+            // retrieve the list of emergency numbers
+            // check read-write ecclist property first
+            String ecclist = (i == 0) ? "ril.ecclist" : ("ril.ecclist" + i);
+
+            if (!TextUtils.isEmpty(numbers)) {
+                numbers = numbers + ",";
+            }
+            numbers = numbers + SystemProperties.get(ecclist);
+        }
+
+        // Additional emergency numbers can be set by a system property
+        String additionalEcclist = SystemProperties.get("ro.ril.ext.ecclist", null);
+        if (!TextUtils.isEmpty(additionalEcclist)) {
+            if (!TextUtils.isEmpty(numbers)) {
+                numbers = numbers + ",";
+            }
+            numbers = numbers + additionalEcclist;
+        }
+
         if (TextUtils.isEmpty(numbers)) {
             // then read-only ecclist property since old RIL only uses this
             numbers = SystemProperties.get("ro.ril.ecclist");
@@ -1716,7 +1745,7 @@ public class PhoneNumberUtils
             return false;
         }
 
-        Log.d(LOG_TAG, "System property doesn't provide any emergency numbers."
+        Rlog.d(LOG_TAG, "System property doesn't provide any emergency numbers."
                 + " Use embedded logic for determining ones.");
 
         // No ecclist system property, so use our own list.
@@ -1802,16 +1831,21 @@ public class PhoneNumberUtils
     private static boolean isLocalEmergencyNumberInternal(String number,
                                                           Context context,
                                                           boolean useExactMatch) {
-        String countryIso;
+        String countryIso = null;
+        Country country;
         CountryDetector detector = (CountryDetector) context.getSystemService(
                 Context.COUNTRY_DETECTOR);
-        if (detector != null) {
-            countryIso = detector.detectCountry().getCountryIso();
+        if ((detector != null) && ((country = detector.detectCountry()) != null)) {
+            countryIso = country.getCountryIso();
         } else {
             Locale locale = context.getResources().getConfiguration().locale;
-            countryIso = locale.getCountry();
-            Log.w(LOG_TAG, "No CountryDetector; falling back to countryIso based on locale: "
-                    + countryIso);
+            if(locale != null) {
+                countryIso = locale.getCountry();
+                Rlog.w(LOG_TAG, "No CountryDetector; falling back to countryIso based on locale: "
+                        + countryIso);
+            } else {
+                countryIso = "US"; //default value is "US"
+            }
         }
         return isEmergencyNumberInternal(number, countryIso, useExactMatch);
     }
@@ -1831,7 +1865,13 @@ public class PhoneNumberUtils
         String vmNumber;
 
         try {
-            vmNumber = TelephonyManager.getDefault().getVoiceMailNumber();
+            if (MSimTelephonyManager.getDefault().isMultiSimEnabled()) {
+                int subscription = MSimTelephonyManager.getDefault()
+                        .getPreferredVoiceSubscription();
+                vmNumber = MSimTelephonyManager.getDefault().getVoiceMailNumber(subscription);
+            } else {
+                vmNumber = TelephonyManager.getDefault().getVoiceMailNumber();
+            }
         } catch (SecurityException ex) {
             return false;
         }
@@ -2020,7 +2060,7 @@ public class PhoneNumberUtils
                         // This should never happen since we checked the if dialStr is null
                         // and if it contains the plus sign in the beginning of this function.
                         // The plus sign is part of the network portion.
-                        Log.e("checkAndProcessPlusCode: null newDialStr", networkDialStr);
+                        Rlog.e("checkAndProcessPlusCode: null newDialStr", networkDialStr);
                         return dialStr;
                     }
                     postDialStr = extractPostDialPortion(tempDialStr);
@@ -2040,7 +2080,7 @@ public class PhoneNumberUtils
                             if (dialableIndex < 0) {
                                 postDialStr = "";
                             }
-                            Log.e("wrong postDialStr=", postDialStr);
+                            Rlog.e("wrong postDialStr=", postDialStr);
                         }
                     }
                     if (DBG) log("checkAndProcessPlusCode,postDialStr=" + postDialStr);
@@ -2049,7 +2089,7 @@ public class PhoneNumberUtils
                 // TODO: Support NANP international conversion and other telephone numbering plans.
                 // Currently the phone is never used in non-NANP system, so return the original
                 // dial string.
-                Log.e("checkAndProcessPlusCode:non-NANP not supported", dialStr);
+                Rlog.e("checkAndProcessPlusCode:non-NANP not supported", dialStr);
             }
         }
         return retStr;
@@ -2108,7 +2148,7 @@ public class PhoneNumberUtils
                 }
             }
         } else {
-            Log.e("isNanp: null dialStr passed in", dialStr);
+            Rlog.e("isNanp: null dialStr passed in", dialStr);
         }
         return retVal;
     }
@@ -2124,7 +2164,7 @@ public class PhoneNumberUtils
                 retVal = true;
             }
         } else {
-            Log.e("isOneNanp: null dialStr passed in", dialStr);
+            Rlog.e("isOneNanp: null dialStr passed in", dialStr);
         }
         return retVal;
     }
@@ -2163,7 +2203,7 @@ public class PhoneNumberUtils
             delimiterIndex = number.indexOf("%40");
         }
         if (delimiterIndex < 0) {
-            Log.w(LOG_TAG,
+            Rlog.w(LOG_TAG,
                   "getUsernameFromUriNumber: no delimiter found in SIP addr '" + number + "'");
             delimiterIndex = number.length();
         }

@@ -221,6 +221,9 @@ final class DisplayPowerController {
     // True if auto-brightness should be used.
     private boolean mUseSoftwareAutoBrightnessConfig;
 
+    // True if twilight adjustment is enabled
+    private boolean mTwilightAdjustmentEnabled;
+
     // The auto-brightness spline adjustment.
     // The brightness values have been scaled to a range of 0..1.
     private Spline mScreenAutoBrightnessSpline;
@@ -233,10 +236,6 @@ final class DisplayPowerController {
     // True if we should fade the screen while turning it off, false if we should play
     // a stylish electron beam animation instead.
     private boolean mElectronBeamFadesConfig;
-
-    // override config for ElectronBeam on or off
-    private boolean mElectronBeamOnEnabled;
-    private boolean mElectronBeamOffEnabled;
 
     // The pending power request.
     // Initially null until the first call to requestPowerState.
@@ -415,6 +414,9 @@ final class DisplayPowerController {
             cr.registerContentObserver(
                     Settings.System.getUriFor(Settings.System.AUTO_BRIGHTNESS_BACKLIGHT),
                     false, observer, UserHandle.USER_ALL);
+            cr.registerContentObserver(
+                    Settings.System.getUriFor(Settings.System.AUTO_BRIGHTNESS_TWILIGHT_ADJUSTMENT),
+                    false, observer, UserHandle.USER_ALL);
 
             mLightSensorWarmUpTimeConfig = resources.getInteger(
                     com.android.internal.R.integer.config_lightSensorWarmupTime);
@@ -473,6 +475,10 @@ final class DisplayPowerController {
             mUseSoftwareAutoBrightnessConfig = false;
             return;
         }
+
+        mTwilightAdjustmentEnabled = Settings.System.getIntForUser(
+                mContext.getContentResolver(), Settings.System.AUTO_BRIGHTNESS_TWILIGHT_ADJUSTMENT,
+                0, UserHandle.USER_CURRENT) != 0;
     }
 
     private int[] getIntArrayForSetting(String setting) {
@@ -679,10 +685,6 @@ final class DisplayPowerController {
             mustNotify = !mDisplayReadyLocked;
         }
 
-        // update crt settings here, it's only two bools
-        mElectronBeamOnEnabled = mPowerRequest.electronBeamOnEnabled;
-        mElectronBeamOffEnabled = mPowerRequest.electronBeamOffEnabled;
-
         // Initialize things the first time the power state is changed.
         if (mustInitialize) {
             initialize();
@@ -775,12 +777,12 @@ final class DisplayPowerController {
                         blockScreenOn();
                     } else {
                         unblockScreenOn();
-                        if (mElectronBeamOffEnabled) {
+                        if (USE_ELECTRON_BEAM_ON_ANIMATION) {
                             if (!mElectronBeamOnAnimator.isStarted()) {
                                 if (mPowerState.getElectronBeamLevel() == 1.0f) {
                                     mPowerState.dismissElectronBeam();
                                 } else if (mPowerState.prepareElectronBeam(
-                                        !mElectronBeamOnEnabled ?
+                                        mElectronBeamFadesConfig ?
                                                 ElectronBeam.MODE_FADE :
                                                         ElectronBeam.MODE_WARM_UP)) {
                                     mElectronBeamOnAnimator.start();
@@ -801,11 +803,13 @@ final class DisplayPowerController {
                     if (!mElectronBeamOffAnimator.isStarted()) {
                         if (mPowerState.getElectronBeamLevel() == 0.0f) {
                             setScreenOn(false);
+                            unblockScreenOn();
                         } else if (mPowerState.prepareElectronBeam(
-                                !mElectronBeamOffEnabled ?
+                                mElectronBeamFadesConfig ?
                                         ElectronBeam.MODE_FADE :
-                                                ElectronBeam.MODE_COOL_DOWN)
-                                && mPowerState.isScreenOn()) {
+                                        ElectronBeam.MODE_COOL_DOWN)
+                                && mPowerState.isScreenOn()
+                                && useScreenOffAnimation()) {
                             mElectronBeamOffAnimator.start();
                         } else {
                             mElectronBeamOffAnimator.end();
@@ -1185,7 +1189,7 @@ final class DisplayPowerController {
             }
         }
 
-        if (USE_TWILIGHT_ADJUSTMENT) {
+        if (USE_TWILIGHT_ADJUSTMENT && mTwilightAdjustmentEnabled) {
             TwilightState state = mTwilight.getCurrentState();
             if (state != null && state.isNight()) {
                 final long now = System.currentTimeMillis();
@@ -1462,4 +1466,9 @@ final class DisplayPowerController {
             updatePowerState();
         }
     };
+
+    private boolean useScreenOffAnimation() {
+        return Settings.System.getInt(mContext.getContentResolver(),
+                Settings.System.SCREEN_OFF_ANIMATION, 1) == 1;
+    }
 }

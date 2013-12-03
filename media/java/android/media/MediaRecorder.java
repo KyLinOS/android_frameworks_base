@@ -16,6 +16,7 @@
 
 package android.media;
 
+import android.app.ActivityThread;
 import android.hardware.Camera;
 import android.os.Handler;
 import android.os.Looper;
@@ -105,10 +106,11 @@ public class MediaRecorder
             mEventHandler = null;
         }
 
+        String packageName = ActivityThread.currentPackageName();
         /* Native setup requires a weak reference to our object.
          * It's easier to create it here than in C++.
          */
-        native_setup(new WeakReference<MediaRecorder>(this));
+        native_setup(new WeakReference<MediaRecorder>(this), packageName);
     }
 
     /**
@@ -183,6 +185,12 @@ public class MediaRecorder
          * Audio source for remote submix.
          */
         public static final int REMOTE_SUBMIX_SOURCE = 8;
+
+        /** @hide */
+        public static final int FM_RX = 9;
+
+        /** @hide */
+        public static final int FM_RX_A2DP = 10;
     }
 
     /**
@@ -313,7 +321,7 @@ public class MediaRecorder
     public static final int getAudioSourceMax() {
         // FIXME disable selection of the remote submxi source selection once test code
         //       doesn't rely on it
-        return AudioSource.REMOTE_SUBMIX_SOURCE;
+        return AudioSource.FM_RX_A2DP;
         //return AudioSource.VOICE_COMMUNICATION;
     }
 
@@ -349,7 +357,7 @@ public class MediaRecorder
              profile.quality <= CamcorderProfile.QUALITY_TIME_LAPSE_QVGA) {
             // Nothing needs to be done. Call to setCaptureRate() enables
             // time lapse video recording.
-        } else {
+        } else if (profile.audioCodec >= 0) {
             setAudioEncodingBitRate(profile.audioBitRate);
             setAudioChannels(profile.audioChannels);
             setAudioSamplingRate(profile.audioSampleRate);
@@ -704,6 +712,10 @@ public class MediaRecorder
      */
     public native void start() throws IllegalStateException;
 
+/** @hide
+*/
+    public native void pause() throws IllegalStateException;
+
     /**
      * Stops recording. Call this after start(). Once recording is stopped,
      * you will have to configure it again as if it has just been constructed.
@@ -999,7 +1011,8 @@ public class MediaRecorder
 
     private static native final void native_init();
 
-    private native final void native_setup(Object mediarecorder_this) throws IllegalStateException;
+    private native final void native_setup(Object mediarecorder_this,
+            String clientName) throws IllegalStateException;
 
     private native final void native_finalize();
 

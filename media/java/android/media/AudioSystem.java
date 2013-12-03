@@ -1,4 +1,7 @@
 /*
+ * Copyright (c) 2013, The Linux Foundation. All rights reserved.
+ * Not a Contribution.
+ *
  * Copyright (C) 2006 The Android Open Source Project
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
@@ -52,6 +55,8 @@ public class AudioSystem
     public static final int STREAM_DTMF = 8;
     /* @hide The audio stream for text to speech (TTS) */
     public static final int STREAM_TTS = 9;
+    /* @hide The audio stream for incall music delivery */
+    public static final int STREAM_INCALL_MUSIC = 10;
     /**
      * @deprecated Use {@link #numStreamTypes() instead}
      */
@@ -87,6 +92,34 @@ public class AudioSystem
     public static final int NUM_MODES               = 4;
 
 
+    /* Call states for Voice calls */
+    /* @hide Call state for inactive call state. */
+    public static final int CALL_INACTIVE           = 0x1;
+    /* @hide Call state for active call state. */
+    public static final int CALL_ACTIVE             = 0x2;
+    /* @hide Call state for hold call state. */
+    public static final int CALL_HOLD               = 0x3;
+    /* @hide Call state for local hold call state. */
+    public static final int CALL_LOCAL_HOLD         = 0x4;
+
+    /* @hide VSID for CS voice, Multimode */
+    public static final long VOICE_VSID             = 0x10C01000;
+    /* @hide VSID for CS Voice GSM-Only */
+    public static final long VOICE2_VSID            = 0x10DC1000;
+    /* @hide VSID for IMS Multimode */
+    public static final long IMS_VSID               = 0x10C02000;
+    /* @hide VSID for QCHAT */
+    public static final long QCHAT_VSID             = 0x10803000;
+
+    /* @hide Key for vsid used in setParameters */
+    public static final String VSID_KEY             = "vsid";
+
+    /* @hide Key for call_state used in setParameters */
+    public static final String CALL_STATE_KEY       = "call_state";
+
+    /* @hide Key for all_call_states used in getParameters */
+    public static final String ALL_CALL_STATES_KEY  = "all_call_states";
+
     /* Routing bits for the former setRouting/getRouting API */
     /** @deprecated */
     @Deprecated public static final int ROUTE_EARPIECE          = (1 << 0);
@@ -109,6 +142,14 @@ public class AudioSystem
      * return true if any track playing on this stream is active.
      */
     public static native boolean isStreamActive(int stream, int inPastMs);
+
+    /*
+     * Checks whether the specified stream type is active on a remotely connected device. The notion
+     * of what constitutes a remote device is enforced by the audio policy manager of the platform.
+     *
+     * return true if any track playing on this stream is active on a remote device.
+     */
+    public static native boolean isStreamActiveRemotely(int stream, int inPastMs);
 
     /*
      * Checks whether the specified audio source is active.
@@ -222,6 +263,8 @@ public class AudioSystem
     public static final int DEVICE_OUT_ANC_HEADSET = 0x10000;
     public static final int DEVICE_OUT_ANC_HEADPHONE = 0x20000;
     public static final int DEVICE_OUT_PROXY = 0x40000;
+    public static final int DEVICE_OUT_FM = 0x80000;
+    public static final int DEVICE_OUT_FM_TX = 0x100000;
     public static final int DEVICE_OUT_DEFAULT = DEVICE_BIT_DEFAULT;
 
     public static final int DEVICE_OUT_ALL = (DEVICE_OUT_EARPIECE |
@@ -243,6 +286,8 @@ public class AudioSystem
                                               DEVICE_OUT_ANC_HEADSET |
                                               DEVICE_OUT_ANC_HEADPHONE |
                                               DEVICE_OUT_PROXY |
+                                              DEVICE_OUT_FM |
+                                              DEVICE_OUT_FM_TX |
                                               DEVICE_OUT_DEFAULT);
     public static final int DEVICE_OUT_ALL_A2DP = (DEVICE_OUT_BLUETOOTH_A2DP |
                                                    DEVICE_OUT_BLUETOOTH_A2DP_HEADPHONES |
@@ -269,6 +314,8 @@ public class AudioSystem
     public static final int DEVICE_IN_USB_DEVICE = DEVICE_BIT_IN | 0x1000;
     public static final int DEVICE_IN_ANC_HEADSET = DEVICE_BIT_IN | 0x2000;
     public static final int DEVICE_IN_PROXY = DEVICE_BIT_IN | 0x4000;
+    public static final int DEVICE_IN_FM_RX = DEVICE_BIT_IN | 0x8000;
+    public static final int DEVICE_IN_FM_RX_A2DP = DEVICE_BIT_IN | 0x10000;
     public static final int DEVICE_IN_DEFAULT = DEVICE_BIT_IN | DEVICE_BIT_DEFAULT;
 
     public static final int DEVICE_IN_ALL = (DEVICE_IN_COMMUNICATION |
@@ -286,6 +333,8 @@ public class AudioSystem
                                              DEVICE_IN_USB_DEVICE |
                                              DEVICE_IN_ANC_HEADSET |
                                              DEVICE_IN_PROXY |
+                                             DEVICE_IN_FM_RX |
+                                             DEVICE_IN_FM_RX_A2DP |
                                              DEVICE_IN_DEFAULT);
     public static final int DEVICE_IN_ALL_SCO = DEVICE_IN_BLUETOOTH_SCO_HEADSET;
 
@@ -313,6 +362,8 @@ public class AudioSystem
     public static final String DEVICE_OUT_ANC_HEADSET_NAME = "anc_headset";
     public static final String DEVICE_OUT_ANC_HEADPHONE_NAME = "anc_headphone";
     public static final String DEVICE_OUT_PROXY_NAME = "proxy";
+    public static final String DEVICE_OUT_FM_NAME = "fm";
+    public static final String DEVICE_OUT_FM_TX_NAME = "fm_tx";
 
     public static String getDeviceName(int device)
     {
@@ -355,6 +406,10 @@ public class AudioSystem
             return DEVICE_OUT_ANC_HEADPHONE_NAME;
         case DEVICE_OUT_PROXY:
             return DEVICE_OUT_PROXY_NAME;
+        case DEVICE_OUT_FM:
+            return DEVICE_OUT_FM_NAME;
+        case DEVICE_OUT_FM_TX:
+            return DEVICE_OUT_FM_TX_NAME;
         case DEVICE_OUT_DEFAULT:
         default:
             return "";
@@ -411,5 +466,6 @@ public class AudioSystem
     // helpers for android.media.AudioManager.getProperty(), see description there for meaning
     public static native int getPrimaryOutputSamplingRate();
     public static native int getPrimaryOutputFrameCount();
+    public static native int getOutputLatency(int stream);
 
 }

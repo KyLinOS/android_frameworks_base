@@ -1,5 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
-<!-- Copyright (C) 2013 The CyanogenMod Project
+<!--
+     Copyright (C) 2013 The CyanogenMod Project
 
      Licensed under the Apache License, Version 2.0 (the "License");
      you may not use this file except in compliance with the License.
@@ -14,15 +15,12 @@
      limitations under the License.
 -->
 <resources>
-
-    <!-- Do not translate. -->
     <integer-array name="maps_starting_lat_lng">
         <item>5884131</item>
         <item>2570560</item>
     </integer-array>
-    <!-- Do not translate. -->
+
     <integer-array name="maps_starting_zoom">
         <item>4</item>
     </integer-array>
-
 </resources>

@@ -55,7 +55,7 @@
     <string name="storage_sd_dock_card">SDカードを接続</string>
     <string name="stylus_app_not_installed">%s はインストールされていません</string>
     <string name="permlab_changePrivacyGuardState">プライバシー保護を有効/無効にする</string>
-    <string name="permdesc_changePrivacyGuardState">アプリに、他のアプリがプライバシー保護のもとで実行するかどうか変更することを許可します。アプリがプライバシー保護の元で実行されるとそのアプリは連絡先、通話履歴、メッセージなどの個人データにアクセスできなくなります。</string>
+    <string name="permdesc_changePrivacyGuardState">アプリに、他のアプリがプライバシー保護で実行するかどうか変更することを許可します。アプリがプライバシー保護で実行されるとそのアプリは連絡先、通話履歴、メッセージなどの個人データにアクセスできなくなります。</string>
     <string name="privacy_guard_notification">プライバシー保護はアクティブ</string>
     <string name="privacy_guard_notification_detail"><xliff:g id="app">%1$s</xliff:g> は、個人データにアクセスできません</string>
     <string name="profile_picker_title">プロファイル</string>

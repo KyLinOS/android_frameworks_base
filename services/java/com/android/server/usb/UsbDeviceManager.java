@@ -176,7 +176,9 @@ public class UsbDeviceManager {
             startAccessoryMode();
         }
 
-        if ("1".equals(SystemProperties.get("ro.adb.secure"))) {
+        boolean secureAdbEnabled = SystemProperties.getBoolean("ro.adb.secure", false);
+        boolean dataEncrypted = "1".equals(SystemProperties.get("vold.decrypt"));
+        if (secureAdbEnabled && !dataEncrypted) {
             mDebuggingManager = new UsbDebuggingManager(context);
         }
     }
@@ -757,7 +759,7 @@ public class UsbDeviceManager {
                             com.android.internal.R.string.adb_active_notification_message);
 
                     Notification notification = new Notification();
-                    notification.icon = com.android.internal.R.drawable.stat_sys_adb;
+                    notification.icon = com.mokee.internal.R.drawable.stat_sys_adb;
                     notification.when = 0;
                     notification.flags = Notification.FLAG_ONGOING_EVENT;
                     notification.tickerText = title;
@@ -893,6 +895,15 @@ public class UsbDeviceManager {
     public void denyUsbDebugging() {
         if (mDebuggingManager != null) {
             mDebuggingManager.denyUsbDebugging();
+        }
+    }
+
+    public void clearUsbDebuggingKeys() {
+        if (mDebuggingManager != null) {
+            mDebuggingManager.clearUsbDebuggingKeys();
+        } else {
+            throw new RuntimeException("Cannot clear Usb Debugging keys, "
+                        + "UsbDebuggingManager not enabled");
         }
     }
 

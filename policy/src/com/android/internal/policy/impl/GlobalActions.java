@@ -123,6 +123,7 @@ class GlobalActions implements DialogInterface.OnDismissListener, DialogInterfac
     private boolean mHasTelephony;
     private boolean mHasVibrator;
     private Profile mChosenProfile;
+    private final boolean mShowSilentToggle;
 
     /**
      * @param context everything needs a context :(
@@ -155,6 +156,9 @@ class GlobalActions implements DialogInterface.OnDismissListener, DialogInterfac
                 mAirplaneModeObserver);
         Vibrator vibrator = (Vibrator) mContext.getSystemService(Context.VIBRATOR_SERVICE);
         mHasVibrator = vibrator != null && vibrator.hasVibrator();
+
+        mShowSilentToggle = SHOW_SILENT_TOGGLE && !mContext.getResources().getBoolean(
+                com.android.internal.R.bool.config_useFixedVolume);
     }
 
     /**
@@ -229,6 +233,15 @@ class GlobalActions implements DialogInterface.OnDismissListener, DialogInterfac
                 R.string.global_actions_expanded_desktop_mode_off_status) {
 
             void onToggle(boolean on) {
+                boolean isPieAutoEnable = Settings.System.getIntForUser(mContext.getContentResolver(),
+                        Settings.System.PIE_AUTO_ENABLE, 0, UserHandle.USER_CURRENT) == 1;
+		//Auto enable/disable PIE
+                if(isPieAutoEnable){
+                        Settings.System.putIntForUser(
+                                mContext.getContentResolver(),
+                                Settings.System.PIE_CONTROLS,
+                                on ? 1 : 0, UserHandle.USER_CURRENT);
+                }
                 changeExpandDesktopModeSystemSetting(on);
             }
 
@@ -403,11 +416,11 @@ class GlobalActions implements DialogInterface.OnDismissListener, DialogInterfac
         }
 
         // next: bug report, if enabled
-        boolean showBugReport = Settings.Secure.getIntForUser(cr,
-                Settings.Secure.BUGREPORT_IN_POWER_MENU, 0, UserHandle.USER_CURRENT) != 0;
+        boolean showBugReport = Settings.Global.getInt(cr,
+                Settings.Global.BUGREPORT_IN_POWER_MENU, 0) != 0;
         if (showBugReport) {
             mItems.add(
-                new SinglePressAction(com.android.internal.R.drawable.stat_sys_adb,
+                new SinglePressAction(com.mokee.internal.R.drawable.stat_sys_adb,
                         R.string.global_action_bug_report) {
 
                     public void onPress() {
@@ -644,7 +657,8 @@ class GlobalActions implements DialogInterface.OnDismissListener, DialogInterfac
                 @Override
                 public void onServiceDisconnected(ComponentName name) {}
             };
-            if (mContext.bindService(intent, conn, Context.BIND_AUTO_CREATE, UserHandle.USER_CURRENT)) {
+
+            if (mContext.bindServiceAsUser(intent, conn, Context.BIND_AUTO_CREATE, UserHandle.CURRENT)) {
                 mScreenshotConnection = conn;
                 mHandler.postDelayed(mScreenshotTimeout, 10000);
             }
@@ -659,7 +673,7 @@ class GlobalActions implements DialogInterface.OnDismissListener, DialogInterfac
 
         mDialog.setTitle(R.string.global_actions);
 
-        if (SHOW_SILENT_TOGGLE) {
+        if (mShowSilentToggle) {
             IntentFilter filter = new IntentFilter(AudioManager.RINGER_MODE_CHANGED_ACTION);
             mContext.registerReceiver(mRingerModeReceiver, filter);
         }
@@ -676,8 +690,13 @@ class GlobalActions implements DialogInterface.OnDismissListener, DialogInterfac
 
     /** {@inheritDoc} */
     public void onDismiss(DialogInterface dialog) {
-        if (SHOW_SILENT_TOGGLE) {
-            mContext.unregisterReceiver(mRingerModeReceiver);
+        if (mShowSilentToggle) {
+            try {
+                mContext.unregisterReceiver(mRingerModeReceiver);
+            } catch (IllegalArgumentException ie) {
+                // ignore this
+                Log.w(TAG, ie);
+            }
         }
     }
 
@@ -885,7 +904,7 @@ class GlobalActions implements DialogInterface.OnDismissListener, DialogInterfac
             }
 
             if (icon != null) {
-                icon.setImageDrawable(context.getResources().getDrawable(R.drawable.ic_lock_profile));
+                icon.setImageDrawable(context.getResources().getDrawable(com.mokee.internal.R.drawable.ic_lock_profile));
             }
 
             if (messageView != null) {

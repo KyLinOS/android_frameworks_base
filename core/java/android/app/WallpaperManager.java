@@ -298,7 +298,7 @@ public class WallpaperManager {
         private Bitmap getDefaultWallpaperLocked(Context context) {
             try {
                 InputStream is = context.getResources().openRawResource(
-                        com.android.internal.R.drawable.default_wallpaper);
+                        com.mokee.internal.R.drawable.default_wallpaper);
                 if (is != null) {
                     int width = mService.getWidthHint();
                     int height = mService.getHeightHint();
@@ -709,7 +709,7 @@ public class WallpaperManager {
     public void setWallpaperOffsets(IBinder windowToken, float xOffset, float yOffset) {
         try {
             //Log.v(TAG, "Sending new wallpaper offsets from app...");
-            WindowManagerGlobal.getWindowSession(mContext.getMainLooper()).setWallpaperPosition(
+            WindowManagerGlobal.getWindowSession().setWallpaperPosition(
                     windowToken, xOffset, yOffset, mWallpaperXStep, mWallpaperYStep);
             //Log.v(TAG, "...app returning after sending offsets!");
         } catch (RemoteException e) {
@@ -747,7 +747,7 @@ public class WallpaperManager {
             int x, int y, int z, Bundle extras) {
         try {
             //Log.v(TAG, "Sending new wallpaper offsets from app...");
-            WindowManagerGlobal.getWindowSession(mContext.getMainLooper()).sendWallpaperCommand(
+            WindowManagerGlobal.getWindowSession().sendWallpaperCommand(
                     windowToken, action, x, y, z, extras, false);
             //Log.v(TAG, "...app returning after sending offsets!");
         } catch (RemoteException e) {
@@ -767,7 +767,7 @@ public class WallpaperManager {
      */
     public void clearWallpaperOffsets(IBinder windowToken) {
         try {
-            WindowManagerGlobal.getWindowSession(mContext.getMainLooper()).setWallpaperPosition(
+            WindowManagerGlobal.getWindowSession().setWallpaperPosition(
                     windowToken, -1, -1, -1, -1);
         } catch (RemoteException e) {
             // Ignore.
@@ -786,7 +786,7 @@ public class WallpaperManager {
      * wallpaper.
      */
     public void clear() throws IOException {
-        setResource(com.android.internal.R.drawable.default_wallpaper);
+        setResource(com.mokee.internal.R.drawable.default_wallpaper);
     }
     
     static Bitmap generateBitmap(Context context, Bitmap bm, int width, int height) {

@@ -23,7 +23,7 @@ public class BatteryTile extends QuickSettingsTile implements BatteryStateChange
     private Drawable mBatteryIcon;
 
     public BatteryTile(Context context, QuickSettingsController qsc, BatteryController controller) {
-        super(context, qsc, R.layout.quick_settings_tile_battery);
+        super(context, qsc);
 
         mController = controller;
 
@@ -80,8 +80,8 @@ public class BatteryTile extends QuickSettingsTile implements BatteryStateChange
 
     @Override
     void updateQuickSettings() {
-        TextView tv = (TextView) mTile.findViewById(R.id.battery_textview);
-        ImageView iv = (ImageView) mTile.findViewById(R.id.battery_image);
+        TextView tv = (TextView) mTile.findViewById(R.id.text);
+        ImageView iv = (ImageView) mTile.findViewById(R.id.image);
 
         tv.setText(mLabel);
         iv.setImageDrawable(mBatteryIcon);

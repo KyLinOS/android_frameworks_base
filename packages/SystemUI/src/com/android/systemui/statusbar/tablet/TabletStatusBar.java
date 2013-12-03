@@ -1,5 +1,8 @@
 /*
- * Copyright (C) 2010 The Android Open Source Project
+ * Copyright (C) 2010 The KylinMod Open Source Project
+ * Copyright (c) 2012-2013 The Linux Foundation. All rights reserved.
+ *
+ * Not a Contribution.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -23,6 +26,7 @@ import android.app.ActivityManagerNative;
 import android.app.Notification;
 import android.app.PendingIntent;
 import android.app.StatusBarManager;
+import android.service.notification.StatusBarNotification;
 import android.content.BroadcastReceiver;
 import android.content.ContentResolver;
 import android.content.Context;
@@ -42,6 +46,7 @@ import android.os.Message;
 import android.os.RemoteException;
 import android.os.ServiceManager;
 import android.provider.Settings;
+import android.telephony.MSimTelephonyManager;
 import android.text.TextUtils;
 import android.util.Pair;
 import android.util.Slog;
@@ -67,11 +72,11 @@ import android.widget.SlidingDrawer.OnDrawerOpenListener;
 import android.widget.SlidingDrawer.OnDrawerScrollListener;
 
 import com.android.internal.statusbar.StatusBarIcon;
-import com.android.internal.statusbar.StatusBarNotification;
 import com.android.systemui.R;
 import com.android.systemui.statusbar.BaseStatusBar;
 import com.android.systemui.statusbar.CommandQueue;
 import com.android.systemui.statusbar.DoNotDisturb;
+import com.android.systemui.statusbar.MSimSignalClusterView;
 import com.android.systemui.statusbar.NotificationData;
 import com.android.systemui.statusbar.NotificationData.Entry;
 import com.android.systemui.statusbar.SignalClusterView;
@@ -85,6 +90,7 @@ import com.android.systemui.statusbar.policy.CompatModeButton;
 import com.android.systemui.statusbar.policy.LocationController;
 import com.android.systemui.statusbar.policy.NetworkController;
 import com.android.systemui.statusbar.policy.NotificationRowLayout;
+import com.android.systemui.statusbar.policy.MSimNetworkController;
 import com.android.systemui.statusbar.policy.Prefs;
 
 import java.io.FileDescriptor;
@@ -169,6 +175,7 @@ public class TabletStatusBar extends BaseStatusBar implements
     LocationController mLocationController;
     NetworkController mNetworkController;
     DoNotDisturb mDoNotDisturb;
+    MSimNetworkController mMSimNetworkController;
 
     ViewGroup mBarContents;
 
@@ -292,24 +299,41 @@ public class TabletStatusBar extends BaseStatusBar implements
         // mobile and data icons
         final ImageView mobileRSSI =
                 (ImageView)mNotificationPanel.findViewById(R.id.mobile_signal);
-        if (mobileRSSI != null) {
-            mNetworkController.addPhoneSignalIconView(mobileRSSI);
-        }
         final ImageView wifiRSSI =
                 (ImageView)mNotificationPanel.findViewById(R.id.wifi_signal);
-        if (wifiRSSI != null) {
-            mNetworkController.addWifiIconView(wifiRSSI);
+        if (MSimTelephonyManager.getDefault().isMultiSimEnabled()) {
+            if (mobileRSSI != null) {
+                mMSimNetworkController.addPhoneSignalIconView(mobileRSSI);
+            }
+            if (wifiRSSI != null) {
+                mMSimNetworkController.addWifiIconView(wifiRSSI);
+            }
+            mMSimNetworkController.addWifiLabelView(
+                    (TextView)mNotificationPanel.findViewById(R.id.wifi_text));
+
+            mMSimNetworkController.addDataTypeIconView(
+                    (ImageView)mNotificationPanel.findViewById(R.id.mobile_type));
+            mMSimNetworkController.addMobileLabelView(
+                    (TextView)mNotificationPanel.findViewById(R.id.mobile_text));
+            mMSimNetworkController.addCombinedLabelView(
+                    (TextView)mBarContents.findViewById(R.id.network_text));
+        } else {
+            if (mobileRSSI != null) {
+                mNetworkController.addPhoneSignalIconView(mobileRSSI);
+            }
+            if (wifiRSSI != null) {
+                mNetworkController.addWifiIconView(wifiRSSI);
+            }
+            mNetworkController.addWifiLabelView(
+                    (TextView)mNotificationPanel.findViewById(R.id.wifi_text));
+
+            mNetworkController.addDataTypeIconView(
+                    (ImageView)mNotificationPanel.findViewById(R.id.mobile_type));
+            mNetworkController.addMobileLabelView(
+                    (TextView)mNotificationPanel.findViewById(R.id.mobile_text));
+            mNetworkController.addCombinedLabelView(
+                    (TextView)mBarContents.findViewById(R.id.network_text));
         }
-        mNetworkController.addWifiLabelView(
-                (TextView)mNotificationPanel.findViewById(R.id.wifi_text));
-
-        mNetworkController.addDataTypeIconView(
-                (ImageView)mNotificationPanel.findViewById(R.id.mobile_type));
-        mNetworkController.addMobileLabelView(
-                (TextView)mNotificationPanel.findViewById(R.id.mobile_text));
-        mNetworkController.addCombinedLabelView(
-                (TextView)mBarContents.findViewById(R.id.network_text));
-
         mStatusBarView.setIgnoreChildren(0, mNotificationTrigger, mNotificationPanel);
 
         WindowManager.LayoutParams lp = mNotificationPanelParams = new WindowManager.LayoutParams(
@@ -322,7 +346,7 @@ public class TabletStatusBar extends BaseStatusBar implements
                     | WindowManager.LayoutParams.FLAG_SPLIT_TOUCH
                     | WindowManager.LayoutParams.FLAG_HARDWARE_ACCELERATED,
                 PixelFormat.TRANSLUCENT);
-        lp.gravity = Gravity.BOTTOM | Gravity.RIGHT;
+        lp.gravity = Gravity.BOTTOM | Gravity.END;
         lp.setTitle("NotificationPanel");
         lp.softInputMode = WindowManager.LayoutParams.SOFT_INPUT_STATE_UNCHANGED
                 | WindowManager.LayoutParams.SOFT_INPUT_ADJUST_NOTHING;
@@ -353,7 +377,7 @@ public class TabletStatusBar extends BaseStatusBar implements
                     | WindowManager.LayoutParams.FLAG_SPLIT_TOUCH
                     | WindowManager.LayoutParams.FLAG_HARDWARE_ACCELERATED,
                 PixelFormat.TRANSLUCENT);
-        lp.gravity = Gravity.BOTTOM | Gravity.RIGHT;
+        lp.gravity = Gravity.BOTTOM | Gravity.END;
         lp.setTitle("InputMethodsPanel");
         lp.windowAnimations = R.style.Animation_RecentPanel;
 
@@ -376,11 +400,13 @@ public class TabletStatusBar extends BaseStatusBar implements
                     | WindowManager.LayoutParams.FLAG_SPLIT_TOUCH
                     | WindowManager.LayoutParams.FLAG_HARDWARE_ACCELERATED,
                 PixelFormat.TRANSLUCENT);
-        lp.gravity = Gravity.BOTTOM | Gravity.RIGHT;
+        lp.gravity = Gravity.BOTTOM | Gravity.END;
         lp.setTitle("CompatModePanel");
         lp.windowAnimations = android.R.style.Animation_Dialog;
 
         mWindowManager.addView(mCompatModePanel, lp);
+
+        mRecentButton.setOnTouchListener(mRecentsPreloadOnTouchListener);
 
         mPile = (NotificationRowLayout)mNotificationPanel.findViewById(R.id.content);
         mPile.removeAllViews();
@@ -456,12 +482,18 @@ public class TabletStatusBar extends BaseStatusBar implements
             mCurrentTheme = (CustomTheme)newTheme.clone();
             recreateStatusBar();
         }
+        super.onConfigurationChanged(newConfig);
         loadDimens();
         mNotificationPanelParams.height = getNotificationPanelHeight();
         mWindowManager.updateViewLayout(mNotificationPanel, mNotificationPanelParams);
         mShowSearchHoldoff = mContext.getResources().getInteger(
                 R.integer.config_show_search_delay);
         updateSearchPanel();
+    }
+
+    @Override
+    protected void refreshLayout(int layoutDirection) {
+        mNotificationPanel.refreshLayout(layoutDirection);
     }
 
     protected void loadDimens() {
@@ -587,11 +619,23 @@ public class TabletStatusBar extends BaseStatusBar implements
         mBluetoothController = new BluetoothController(mContext);
         mBluetoothController.addIconView((ImageView)sb.findViewById(R.id.bluetooth));
 
-        mNetworkController = new NetworkController(mContext);
-        mSignalView = (SignalClusterView) sb.findViewById(R.id.signal_cluster);
-        mNetworkController.addSignalCluster(mSignalView);
-
         mClock = (Clock) sb.findViewById(R.id.clock);
+
+        if (MSimTelephonyManager.getDefault().isMultiSimEnabled()) {
+            final MSimSignalClusterView mSimSignalCluster =
+                    (MSimSignalClusterView)sb.findViewById(R.id.msim_signal_cluster);
+
+            mMSimNetworkController = new MSimNetworkController(mContext);
+            for(int i=0; i < MSimTelephonyManager.getDefault().getPhoneCount(); i++) {
+                mMSimNetworkController.addSignalCluster(mSimSignalCluster, i);
+            }
+        } else {
+            final SignalClusterView signalCluster =
+                    (SignalClusterView)sb.findViewById(R.id.signal_cluster);
+
+            mNetworkController = new NetworkController(mContext);
+            mNetworkController.addSignalCluster(signalCluster);
+        }
 
         // The navigation buttons
         mBackButton = (ImageView)sb.findViewById(R.id.back);
@@ -700,6 +744,10 @@ public class TabletStatusBar extends BaseStatusBar implements
         }
         addSidebarView();
 
+        if (!mRecreating) {
+            addActiveDisplayView();
+        }
+
         return sb;
     }
 
@@ -714,7 +762,7 @@ public class TabletStatusBar extends BaseStatusBar implements
                 | WindowManager.LayoutParams.FLAG_SPLIT_TOUCH
                 | WindowManager.LayoutParams.FLAG_HARDWARE_ACCELERATED,
                 PixelFormat.TRANSLUCENT);
-        lp.gravity = Gravity.BOTTOM | Gravity.LEFT;
+        lp.gravity = Gravity.BOTTOM | Gravity.START;
         lp.setTitle("RecentsPanel");
         lp.windowAnimations = com.android.internal.R.style.Animation_RecentApplications;
         lp.softInputMode = WindowManager.LayoutParams.SOFT_INPUT_STATE_UNCHANGED
@@ -740,13 +788,25 @@ public class TabletStatusBar extends BaseStatusBar implements
             lp.flags |= WindowManager.LayoutParams.FLAG_DIM_BEHIND;
             lp.dimAmount = 0.7f;
         }
-        lp.gravity = Gravity.BOTTOM | Gravity.LEFT;
+        lp.gravity = Gravity.BOTTOM | Gravity.START;
         lp.setTitle("SearchPanel");
         // TODO: Define custom animation for Search panel
         lp.windowAnimations = com.android.internal.R.style.Animation_RecentApplications;
         lp.softInputMode = WindowManager.LayoutParams.SOFT_INPUT_STATE_UNCHANGED
                 | WindowManager.LayoutParams.SOFT_INPUT_ADJUST_NOTHING;
         return lp;
+    }
+
+    @Override
+    public void toggleNotificationShade() {
+        int msg = (mNotificationPanel.isShowing())
+                ? MSG_CLOSE_NOTIFICATION_PANEL : MSG_OPEN_NOTIFICATION_PANEL;
+        mHandler.removeMessages(msg);
+        mHandler.sendEmptyMessage(msg);
+    }
+
+    @Override
+    public void toggleStatusBar(boolean enable) {
     }
 
     @Override
@@ -955,12 +1015,12 @@ public class TabletStatusBar extends BaseStatusBar implements
         final boolean immersive = isImmersive();
         if (false && immersive) {
             // TODO: immersive mode popups for tablet
-        } else if (notification.notification.fullScreenIntent != null) {
+        } else if (notification.getNotification().fullScreenIntent != null) {
             // not immersive & a full-screen alert should be shown
             Slog.w(TAG, "Notification has fullScreenIntent and activity is not immersive;"
                     + " sending fullScreenIntent");
             try {
-                notification.notification.fullScreenIntent.send();
+                notification.getNotification().fullScreenIntent.send();
             } catch (PendingIntent.CanceledException e) {
             }
         } else if (!mRecreating) {
@@ -1074,7 +1134,7 @@ public class TabletStatusBar extends BaseStatusBar implements
         }
         // If they asked for FLAG_ONLY_ALERT_ONCE, then only show this notification
         // if it's a new notification.
-        if (!firstTime && (n.notification.flags & Notification.FLAG_ONLY_ALERT_ONCE) != 0) {
+        if (!firstTime && (n.getNotification().flags & Notification.FLAG_ONLY_ALERT_ONCE) != 0) {
             return;
         }
 
@@ -1084,7 +1144,7 @@ public class TabletStatusBar extends BaseStatusBar implements
         // until status bar window is attached to the window manager,
         // because...  well, what's the point otherwise?  And trying to
         // run a ticker without being attached will crash!
-        if (hasTicker(n.notification) && mStatusBarView.getWindowToken() != null) {
+        if (hasTicker(n.getNotification()) && mStatusBarView.getWindowToken() != null) {
             if (0 == (mDisabled & (StatusBarManager.DISABLE_NOTIFICATION_ICONS
                             | StatusBarManager.DISABLE_NOTIFICATION_TICKER))) {
                 mTicker.add(key, n);
@@ -1623,7 +1683,7 @@ public class TabletStatusBar extends BaseStatusBar implements
         for (int i=0; toShow.size()< maxNotificationIconsCount; i++) {
             if (i >= N) break;
             Entry ent = mNotificationData.get(N-i-1);
-            if ((provisioned && ent.notification.score >= HIDE_ICONS_BELOW_SCORE)
+            if ((provisioned && ent.notification.getScore() >= HIDE_ICONS_BELOW_SCORE)
                     || showNotificationEvenIfUnprovisioned(ent.notification)) {
                 toShow.add(ent.icon);
             }
@@ -1729,8 +1789,15 @@ public class TabletStatusBar extends BaseStatusBar implements
     public void dump(FileDescriptor fd, PrintWriter pw, String[] args) {
         pw.print("mDisabled=0x");
         pw.println(Integer.toHexString(mDisabled));
-        pw.println("mNetworkController:");
-        mNetworkController.dump(fd, pw, args);
+        if (MSimTelephonyManager.getDefault().isMultiSimEnabled()) {
+            pw.println("mMSimNetworkController:");
+            for(int i=0; i < MSimTelephonyManager.getDefault().getPhoneCount(); i++) {
+                mMSimNetworkController.dump(fd, pw, args, i);
+            }
+        } else {
+            pw.println("mNetworkController:");
+            mNetworkController.dump(fd, pw, args);
+        }
     }
 
     @Override

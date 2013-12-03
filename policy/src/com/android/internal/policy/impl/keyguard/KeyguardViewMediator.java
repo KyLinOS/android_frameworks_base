@@ -1,6 +1,9 @@
 /*
  * Copyright (C) 2007 The Android Open Source Project
  *
+ * Copyright (c) 2013, The Linux Foundation. All rights reserved.
+ * Not a Contribution.
+ *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
  * You may obtain a copy of the License at
@@ -44,6 +47,7 @@ import android.os.SystemProperties;
 import android.os.UserHandle;
 import android.os.UserManager;
 import android.provider.Settings;
+import android.telephony.MSimTelephonyManager;
 import android.telephony.TelephonyManager;
 import android.util.EventLog;
 import android.util.Log;
@@ -52,8 +56,8 @@ import android.view.WindowManager;
 import android.view.WindowManagerPolicy;
 
 import com.android.internal.telephony.IccCardConstants;
+import com.android.internal.util.cm.QuietHoursUtils;
 import com.android.internal.widget.LockPatternUtils;
-
 
 /**
  * Mediates requests related to the keyguard.  This includes queries about the
@@ -155,6 +159,7 @@ public class KeyguardViewMediator {
     private StatusBarManager mStatusBarManager;
     private boolean mShowLockIcon;
     private boolean mShowingLockIcon;
+    private boolean mSwitchingUser;
 
     private boolean mSystemReady;
 
@@ -259,6 +264,11 @@ public class KeyguardViewMediator {
     private final float mLockSoundVolume;
 
     /**
+     * Cache of avatar drawables, for use by KeyguardMultiUserAvatar.
+     */
+    private static MultiUserAvatarCache sMultiUserAvatarCache = new MultiUserAvatarCache();
+
+    /**
      * The callback used by the keyguard view to tell the {@link KeyguardViewMediator}
      * various things.
      */
@@ -316,21 +326,34 @@ public class KeyguardViewMediator {
     KeyguardUpdateMonitorCallback mUpdateCallback = new KeyguardUpdateMonitorCallback() {
 
         @Override
-        public void onUserSwitched(int userId) {
+        public void onUserSwitching(int userId) {
             // Note that the mLockPatternUtils user has already been updated from setCurrentUser.
             // We need to force a reset of the views, since lockNow (called by
             // ActivityManagerService) will not reconstruct the keyguard if it is already showing.
             synchronized (KeyguardViewMediator.this) {
+                mSwitchingUser = true;
                 resetStateLocked(null);
                 adjustStatusBarLocked();
-                // Disable face unlock when the user switches.
-                KeyguardUpdateMonitor.getInstance(mContext).setAlternateUnlockEnabled(false);
+                // When we switch users we want to bring the new user to the biometric unlock even
+                // if the current user has gone to the backup.
+                KeyguardUpdateMonitor.getInstance(mContext).setAlternateUnlockEnabled(true);
             }
+        }
+
+        @Override
+        public void onUserSwitchComplete(int userId) {
+            mSwitchingUser = false;
         }
 
         @Override
         public void onUserRemoved(int userId) {
             mLockPatternUtils.removeUser(userId);
+            sMultiUserAvatarCache.clear(userId);
+        }
+
+        @Override
+        public void onUserInfoChanged(int userId) {
+            sMultiUserAvatarCache.clear(userId);
         }
 
         @Override
@@ -363,6 +386,11 @@ public class KeyguardViewMediator {
 
         @Override
         public void onSimStateChanged(IccCardConstants.State simState) {
+            onSimStateChanged(simState, MSimTelephonyManager.getDefault().getDefaultSubscription());
+        }
+
+        @Override
+        public void onSimStateChanged(IccCardConstants.State simState, int subscription) {
             if (DEBUG) Log.d(TAG, "onSimStateChanged: " + simState);
 
             switch (simState) {
@@ -897,14 +925,15 @@ public class KeyguardViewMediator {
         }
 
         // if the setup wizard hasn't run yet, don't show
-        final boolean requireSim = !SystemProperties.getBoolean("keyguard.no_require_sim",
-                false);
         final boolean provisioned = mUpdateMonitor.isDeviceProvisioned();
-        final IccCardConstants.State state = mUpdateMonitor.getSimState();
-        final boolean lockedOrMissing = state.isPinLocked()
-                || ((state == IccCardConstants.State.ABSENT
-                || state == IccCardConstants.State.PERM_DISABLED)
-                && requireSim);
+        int numPhones = MSimTelephonyManager.getDefault().getPhoneCount();
+        final IccCardConstants.State []state = new IccCardConstants.State[numPhones];
+        boolean lockedOrMissing = false;
+        for (int i = 0; i < numPhones; i++) {
+            state[i] = mUpdateMonitor.getSimState(i);
+            lockedOrMissing = lockedOrMissing || isLockedOrMissing(state[i]);
+            if (lockedOrMissing) break;
+        }
 
         if (!lockedOrMissing && !provisioned) {
             if (DEBUG) Log.d(TAG, "doKeyguard: not showing because device isn't provisioned"
@@ -922,6 +951,15 @@ public class KeyguardViewMediator {
         showLocked(options);
     }
 
+    boolean isLockedOrMissing(IccCardConstants.State state) {
+        final boolean requireSim = !SystemProperties.getBoolean("keyguard.no_require_sim",
+                false);
+        return (state.isPinLocked()
+                || ((state == IccCardConstants.State.ABSENT
+                        || state == IccCardConstants.State.PERM_DISABLED)
+                    && requireSim));
+    }
+
     /**
      * Dismiss the keyguard through the security layers.
      */
@@ -937,7 +975,7 @@ public class KeyguardViewMediator {
      * @see #handleReset()
      */
     private void resetStateLocked(Bundle options) {
-        if (DEBUG) Log.d(TAG, "resetStateLocked");
+        if (DEBUG) Log.e(TAG, "resetStateLocked");
         Message msg = mHandler.obtainMessage(RESET, options);
         mHandler.sendMessage(msg);
     }
@@ -1220,6 +1258,10 @@ public class KeyguardViewMediator {
             return;
         }
 
+        if (QuietHoursUtils.inQuietHours(mContext, Settings.System.QUIET_HOURS_SYSTEM)) {
+            return;
+        }
+
         final ContentResolver cr = mContext.getContentResolver();
         if (Settings.System.getInt(cr, Settings.System.LOCKSCREEN_SOUNDS_ENABLED, 1) == 1) {
             final int whichSound = locked
@@ -1257,6 +1299,12 @@ public class KeyguardViewMediator {
             if (DEBUG) Log.d(TAG, "handleShow");
             if (!mSystemReady) return;
 
+            new Thread(new Runnable() {
+                public void run() {
+                    playSounds(true);
+                }
+            }).start();
+
             mKeyguardViewManager.show(options);
             mShowing = true;
             mKeyguardDonePending = false;
@@ -1267,9 +1315,6 @@ public class KeyguardViewMediator {
                 ActivityManagerNative.getDefault().closeSystemDialogs("lock");
             } catch (RemoteException e) {
             }
-
-            // Do this at the end to not slow down display of the keyguard.
-            playSounds(true);
 
             mShowKeyguardWakeLock.release();
         }
@@ -1390,6 +1435,10 @@ public class KeyguardViewMediator {
      * @see #RESET
      */
     private void handleReset(Bundle options) {
+        if (options == null) {
+            options = new Bundle();
+        }
+        options.putBoolean(KeyguardViewManager.IS_SWITCHING_USER, mSwitchingUser);
         synchronized (KeyguardViewMediator.this) {
             if (DEBUG) Log.d(TAG, "handleReset");
             mKeyguardViewManager.reset(options);
@@ -1446,6 +1495,10 @@ public class KeyguardViewMediator {
 
     private boolean isAssistantAvailable() {
         return mSearchManager != null
-                && mSearchManager.getAssistIntent(mContext, UserHandle.USER_CURRENT) != null;
+                && mSearchManager.getAssistIntent(mContext, false, UserHandle.USER_CURRENT) != null;
+    }
+
+    public static MultiUserAvatarCache getAvatarCache() {
+        return sMultiUserAvatarCache;
     }
 }

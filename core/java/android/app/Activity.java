@@ -37,6 +37,7 @@ import android.content.res.TypedArray;
 import android.database.Cursor;
 import android.graphics.Bitmap;
 import android.graphics.Canvas;
+import android.graphics.Rect;
 import android.graphics.drawable.Drawable;
 import android.media.AudioManager;
 import android.net.Uri;
@@ -47,8 +48,10 @@ import android.os.IBinder;
 import android.os.Looper;
 import android.os.Parcelable;
 import android.os.RemoteException;
+import android.os.ServiceManager;
 import android.os.StrictMode;
 import android.os.UserHandle;
+import android.provider.Settings;
 import android.text.Selection;
 import android.text.SpannableStringBuilder;
 import android.text.TextUtils;
@@ -66,6 +69,7 @@ import android.view.ContextMenu.ContextMenuInfo;
 import android.view.ContextThemeWrapper;
 import android.view.Display;
 import android.view.Gravity;
+import android.view.IWindowManager;
 import android.view.KeyEvent;
 import android.view.LayoutInflater;
 import android.view.Menu;
@@ -82,6 +86,8 @@ import android.view.WindowManager;
 import android.view.WindowManagerGlobal;
 import android.view.accessibility.AccessibilityEvent;
 import android.widget.AdapterView;
+
+import com.android.internal.statusbar.IStatusBarService;
 
 import java.io.FileDescriptor;
 import java.io.PrintWriter;
@@ -699,6 +705,9 @@ public class Activity extends ContextThemeWrapper
     private SearchManager mSearchManager;
     private MenuInflater mMenuInflater;
 
+    private IStatusBarService mStatusBarService;
+    private Object mServiceAquireLock = new Object();
+
     static final class NonConfigurationInstances {
         Object activity;
         HashMap<String, Object> children;
@@ -719,6 +728,10 @@ public class Activity extends ContextThemeWrapper
 
     private CharSequence mTitle;
     private int mTitleColor = 0;
+
+    private boolean mQuickPeekAction = false;
+    private boolean mNtShadeActive = false;
+    private float mQuickPeekInitialY;
 
     final FragmentManagerImpl mFragments = new FragmentManagerImpl();
     final FragmentContainer mContainer = new FragmentContainer() {
@@ -761,6 +774,9 @@ public class Activity extends ContextThemeWrapper
 
     private Thread mUiThread;
     final Handler mHandler = new Handler();
+
+    private Rect mOriginalBounds;
+    private boolean mIsSplitView;
 
     /** Return the intent that started this activity. */
     public Intent getIntent() {
@@ -1347,6 +1363,20 @@ public class Activity extends ContextThemeWrapper
      */
     public CharSequence onCreateDescription() {
         return null;
+    }
+
+    /**
+     * This is called when the user is requesting an assist, to build a full
+     * {@link Intent#ACTION_ASSIST} Intent with all of the context of the current
+     * application.  You can override this method to place into the bundle anything
+     * you would like to appear in the {@link Intent#EXTRA_ASSIST_CONTEXT} part
+     * of the assist Intent.  The default implementation does nothing.
+     *
+     * <p>This function will be called after any global assist callbacks that had
+     * been registered with {@link Application#registerOnProvideAssistDataListener
+     * Application.registerOnProvideAssistDataListener}.
+     */
+    public void onProvideAssistData(Bundle data) {
     }
 
     /**
@@ -2411,13 +2441,77 @@ public class Activity extends ContextThemeWrapper
      * @return boolean Return true if this event was consumed.
      */
     public boolean dispatchTouchEvent(MotionEvent ev) {
-        if (ev.getAction() == MotionEvent.ACTION_DOWN) {
-            onUserInteraction();
+        final int action = ev.getAction();
+        switch (action) {
+            case MotionEvent.ACTION_DOWN:
+                if (Settings.System.getInt(getContentResolver(),
+                    Settings.System.STATUSBAR_PEEK, 0) == 1) {
+                    if (ev.getY() < getStatusBarHeight()) {
+                        mQuickPeekInitialY = ev.getY();
+                        mQuickPeekAction = true;
+                    } else if (mNtShadeActive) {
+                        try {
+                            IStatusBarService statusbar = getStatusBarService();
+                            if (statusbar != null) {
+                                statusbar.toggleStatusBar(false);
+                            }
+                            mNtShadeActive = false;
+                        } catch (RemoteException e) {
+                            Slog.e(TAG, "RemoteException during toggle statusbar", e);
+                            mStatusBarService = null;
+                        }
+                    }
+                }
+                onUserInteraction();
+                break;
+            case MotionEvent.ACTION_MOVE:
+                if (!mQuickPeekAction) {
+                    break;
+                }
+                if (Math.abs(ev.getY() - mQuickPeekInitialY) > getStatusBarHeight()) {
+                    try {
+                        IStatusBarService statusbar = getStatusBarService();
+                        if (statusbar != null) {
+                            statusbar.toggleStatusBar(true);
+                        }
+                        mNtShadeActive = true;
+                        mQuickPeekAction = false;
+                    } catch (RemoteException e) {
+                        Slog.e(TAG, "RemoteException during toggle statusbar", e);
+                        mStatusBarService = null;
+                    }
+                }
+                break;
+            default:
+                mQuickPeekAction = false;
+                break;
+        }
+        if (mIsSplitView) {
+            IWindowManager wm = (IWindowManager) WindowManagerGlobal.getWindowManagerService();
+            try {
+                wm.notifyActivityTouched(mToken, false);
+            } catch (RemoteException e) {
+                Log.e(TAG, "Cannot notify activity touched", e);
+            }
         }
         if (getWindow().superDispatchTouchEvent(ev)) {
             return true;
         }
         return onTouchEvent(ev);
+    }
+
+    private int getStatusBarHeight() {
+        return getResources().getDimensionPixelSize(com.android.internal.R.dimen.status_bar_height);
+    }
+
+    IStatusBarService getStatusBarService() {
+        synchronized (mServiceAquireLock) {
+            if (mStatusBarService == null) {
+                mStatusBarService = IStatusBarService.Stub.asInterface(
+                        ServiceManager.getService("statusbar"));
+            }
+            return mStatusBarService;
+        }
     }
     
     /**
@@ -2546,12 +2640,16 @@ public class Activity extends ContextThemeWrapper
      * Activity don't need to deal with feature codes.
      */
     public boolean onMenuItemSelected(int featureId, MenuItem item) {
+        CharSequence titleCondensed = item.getTitleCondensed();
+
         switch (featureId) {
             case Window.FEATURE_OPTIONS_PANEL:
                 // Put event logging here so it gets called even if subclass
                 // doesn't call through to superclass's implmeentation of each
                 // of these methods below
-                EventLog.writeEvent(50000, 0, item.getTitleCondensed());
+                if(titleCondensed != null) {
+                    EventLog.writeEvent(50000, 0, titleCondensed.toString());
+                }
                 if (onOptionsItemSelected(item)) {
                     return true;
                 }
@@ -2569,7 +2667,9 @@ public class Activity extends ContextThemeWrapper
                 return false;
                 
             case Window.FEATURE_CONTEXT_MENU:
-                EventLog.writeEvent(50000, 1, item.getTitleCondensed());
+                if(titleCondensed != null) {
+                    EventLog.writeEvent(50000, 1, titleCondensed.toString());
+                }
                 if (onContextItemSelected(item)) {
                     return true;
                 }
@@ -3500,7 +3600,8 @@ public class Activity extends ContextThemeWrapper
         try {
             String resolvedType = null;
             if (fillInIntent != null) {
-                fillInIntent.setAllowFds(false);
+                fillInIntent.migrateExtraStreamToClipData();
+                fillInIntent.prepareToLeaveProcess();
                 resolvedType = fillInIntent.resolveTypeIfNeeded(getContentResolver());
             }
             int result = ActivityManagerNative.getDefault()
@@ -3725,9 +3826,10 @@ public class Activity extends ContextThemeWrapper
         if (mParent == null) {
             int result = ActivityManager.START_RETURN_INTENT_TO_CALLER;
             try {
-                intent.setAllowFds(false);
+                intent.migrateExtraStreamToClipData();
+                intent.prepareToLeaveProcess();
                 result = ActivityManagerNative.getDefault()
-                    .startActivity(mMainThread.getApplicationThread(),
+                    .startActivity(mMainThread.getApplicationThread(), getBasePackageName(),
                             intent, intent.resolveTypeIfNeeded(getContentResolver()),
                             mToken, mEmbeddedID, requestCode,
                             ActivityManager.START_FLAG_ONLY_IF_NEEDED, null, null,
@@ -3795,7 +3897,8 @@ public class Activity extends ContextThemeWrapper
     public boolean startNextMatchingActivity(Intent intent, Bundle options) {
         if (mParent == null) {
             try {
-                intent.setAllowFds(false);
+                intent.migrateExtraStreamToClipData();
+                intent.prepareToLeaveProcess();
                 return ActivityManagerNative.getDefault()
                     .startNextMatchingActivity(mToken, intent, options);
             } catch (RemoteException e) {
@@ -4014,10 +4117,16 @@ public class Activity extends ContextThemeWrapper
      * use this information to validate that the recipient is allowed to
      * receive the data.
      * 
-     * <p>Note: if the calling activity is not expecting a result (that is it
+     * <p class="note">Note: if the calling activity is not expecting a result (that is it
      * did not use the {@link #startActivityForResult} 
      * form that includes a request code), then the calling package will be 
-     * null. 
+     * null.</p>
+     *
+     * <p class="note">Note: prior to {@link android.os.Build.VERSION_CODES#JELLY_BEAN_MR2},
+     * the result from this method was unstable.  If the process hosting the calling
+     * package was no longer running, it would return null instead of the proper package
+     * name.  You can use {@link #getCallingActivity()} and retrieve the package name
+     * from that instead.</p>
      * 
      * @return The package of the activity that will receive your
      *         reply, or null if none.
@@ -4036,12 +4145,12 @@ public class Activity extends ContextThemeWrapper
      * can use this information to validate that the recipient is allowed to
      * receive the data.
      * 
-     * <p>Note: if the calling activity is not expecting a result (that is it
+     * <p class="note">Note: if the calling activity is not expecting a result (that is it
      * did not use the {@link #startActivityForResult} 
      * form that includes a request code), then the calling package will be 
      * null. 
      * 
-     * @return String The full name of the activity that will receive your
+     * @return The ComponentName of the activity that will receive your
      *         reply, or null if none.
      */
     public ComponentName getCallingActivity() {
@@ -4149,7 +4258,7 @@ public class Activity extends ContextThemeWrapper
             if (false) Log.v(TAG, "Finishing self: token=" + mToken);
             try {
                 if (resultData != null) {
-                    resultData.setAllowFds(false);
+                    resultData.prepareToLeaveProcess();
                 }
                 if (ActivityManagerNative.getDefault()
                     .finishActivity(mToken, resultCode, resultData)) {
@@ -4305,7 +4414,7 @@ public class Activity extends ContextThemeWrapper
             int flags) {
         String packageName = getPackageName();
         try {
-            data.setAllowFds(false);
+            data.prepareToLeaveProcess();
             IIntentSender target =
                 ActivityManagerNative.getDefault().getIntentSender(
                         ActivityManager.INTENT_SENDER_ACTIVITY_RESULT, packageName,
@@ -4829,8 +4938,8 @@ public class Activity extends ContextThemeWrapper
      * <code>android:immersive</code> but may be changed at runtime by
      * {@link #setImmersive}.
      *
+     * @see #setImmersive(boolean)
      * @see android.content.pm.ActivityInfo#FLAG_IMMERSIVE
-     * @hide
      */
     public boolean isImmersive() {
         try {
@@ -4842,7 +4951,7 @@ public class Activity extends ContextThemeWrapper
 
     /**
      * Adjust the current immersive mode setting.
-     * 
+     *
      * Note that changing this value will have no effect on the activity's
      * {@link android.content.pm.ActivityInfo} structure; that is, if
      * <code>android:immersive</code> is set to <code>true</code>
@@ -4851,9 +4960,8 @@ public class Activity extends ContextThemeWrapper
      * always have its {@link android.content.pm.ActivityInfo#FLAG_IMMERSIVE
      * FLAG_IMMERSIVE} bit set.
      *
-     * @see #isImmersive
+     * @see #isImmersive()
      * @see android.content.pm.ActivityInfo#FLAG_IMMERSIVE
-     * @hide
      */
     public void setImmersive(boolean i) {
         try {
@@ -4985,9 +5093,10 @@ public class Activity extends ContextThemeWrapper
                 resultData = mResultData;
             }
             if (resultData != null) {
-                resultData.setAllowFds(false);
+                resultData.prepareToLeaveProcess();
             }
             try {
+                upIntent.prepareToLeaveProcess();
                 return ActivityManagerNative.getDefault().navigateUpTo(mToken, upIntent,
                         resultCode, resultData);
             } catch (RemoteException e) {
@@ -5070,7 +5179,7 @@ public class Activity extends ContextThemeWrapper
         attachBaseContext(context);
 
         mFragments.attachActivity(this, mContainer, null);
-        
+
         boolean floating = (intent.getFlags()&Intent.FLAG_FLOATING_WINDOW) == Intent.FLAG_FLOATING_WINDOW;
         boolean history = (intent.getFlags()&Intent.FLAG_ACTIVITY_LAUNCHED_FROM_HISTORY) == Intent.FLAG_ACTIVITY_LAUNCHED_FROM_HISTORY;
         if (intent != null && floating && !history) {
@@ -5109,7 +5218,7 @@ public class Activity extends ContextThemeWrapper
         } else {
             mWindow = PolicyManager.makeNewWindow(this);
         }
-        
+
         mWindow.setCallback(this);
         mWindow.getLayoutInflater().setPrivateFactory(this);
         if (info.softInputMode != WindowManager.LayoutParams.SOFT_INPUT_STATE_UNSPECIFIED) {
@@ -5142,8 +5251,13 @@ public class Activity extends ContextThemeWrapper
         }
         mWindowManager = mWindow.getWindowManager();
         mCurrentConfig = config;
+
+        if ((intent.getFlags() & Intent.FLAG_ACTIVITY_SPLIT_VIEW) != 0) {
+            final IWindowManager wm = (IWindowManager) WindowManagerGlobal.getWindowManagerService();
+            updateSplitViewMetrics(true);
+        }
     }
-    
+
     private void scaleFloatingWindow(Context context) {
         if (!mWindow.mIsFloatingWindow) {
             return;
@@ -5167,6 +5281,70 @@ public class Activity extends ContextThemeWrapper
     /** @hide */
     public final IBinder getActivityToken() {
         return mParent != null ? mParent.getActivityToken() : mToken;
+    }
+
+    /** @hide */
+    final void updateSplitViewMetrics(boolean shouldReset) {
+        final IWindowManager wm = (IWindowManager) WindowManagerGlobal.getWindowManagerService();
+
+        try {
+            mIsSplitView = false;
+
+            if (shouldReset) {
+                wm.getSplitViewRect(getTaskId(), true);
+            }
+
+            // Check for split view settings
+            if (wm.isTaskSplitView(getTaskId())) {
+                // This activity/task is tagged as being in split view
+                mIsSplitView = true;
+
+                wm.setTaskChildSplit(mToken, true);
+
+                // Then, we apply it the position and size
+                mWindow.setGravity(Gravity.LEFT | Gravity.TOP);
+
+                WindowManager.LayoutParams params = mWindow.getAttributes();
+
+                // We save the original window size, in case we want to restore it later
+                if (mOriginalBounds == null) {
+                    mOriginalBounds = new Rect();
+                    mOriginalBounds.left = params.x;
+                    mOriginalBounds.top = params.y;
+                    mOriginalBounds.right = params.x + params.width;
+                    mOriginalBounds.bottom = params.y + params.height;
+                }
+
+                Rect windowBounds = wm.getSplitViewRect(getTaskId(), false);
+                mWindow.setLayout(windowBounds.right - windowBounds.left,
+                    windowBounds.bottom - windowBounds.top);
+
+                params.x = windowBounds.left;
+                params.y = windowBounds.top;
+                mWindow.setAttributes(params);
+
+                // Finally, we make the window non-modal to allow the second app to get input
+                mWindow.addFlags(WindowManager.LayoutParams.FLAG_NOT_TOUCH_MODAL);
+                mWindow.addFlags(WindowManager.LayoutParams.FLAG_SPLIT_TOUCH);
+
+                // We notify that we are touched -- but really it's just so that this activity
+                // which just opened has the focus without the need to touch it
+                wm.notifyActivityTouched(mToken, true);
+            } else if (mOriginalBounds != null) {
+                // Restore normal window bounds
+                Log.d(TAG, "Restore original bounds from split (TaskId=" + getTaskId() + ")");
+                WindowManager.LayoutParams params = mWindow.getAttributes();
+                params.x = mOriginalBounds.left;
+                params.y = mOriginalBounds.top;
+
+                mWindow.setLayout(mOriginalBounds.right - mOriginalBounds.left,
+                    mOriginalBounds.bottom - mOriginalBounds.top);
+
+                wm.setTaskChildSplit(mToken, false);
+            }
+        } catch (RemoteException e) {
+            Log.e(TAG, "Could not perform split view actions on restart", e);
+        }
     }
 
     final void performCreate(Bundle icicle) {
@@ -5202,6 +5380,7 @@ public class Activity extends ContextThemeWrapper
     
     final void performRestart() {
         mFragments.noteStateNotSaved();
+        updateSplitViewMetrics(false);
 
         if (mStopped) {
             mStopped = false;
@@ -5287,7 +5466,7 @@ public class Activity extends ContextThemeWrapper
         onUserInteraction();
         onUserLeaveHint();
     }
-    
+
     final void performStop() {
         if (mLoadersStarted) {
             mLoadersStarted = false;

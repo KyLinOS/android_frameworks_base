@@ -1,6 +1,7 @@
 <manifest xmlns:android="http://schemas.android.com/apk/res/android"
         xmlns:androidprv="http://schemas.android.com/apk/prv/res/android"
         package="com.android.systemui"
+        android:sharedUserId="android.uid.system"
         coreApp="true">
 
     <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />
@@ -10,6 +11,7 @@
     <uses-permission android:name="android.permission.WAKE_LOCK" />
 
     <uses-permission android:name="android.permission.INJECT_EVENTS" />
+    <uses-permission android:name="android.permission.DUMP" />
     <uses-permission android:name="android.permission.WRITE_SETTINGS" />
 
     <uses-permission android:name="android.permission.STATUS_BAR_SERVICE" />
@@ -58,7 +60,8 @@
     <uses-permission android:name="android.permission.START_ANY_ACTIVITY" />
     <uses-permission android:name="android.permission.INTERACT_ACROSS_USERS_FULL" />
     <uses-permission android:name="android.permission.FORCE_STOP_PACKAGES" />
-
+    <uses-permission android:name="android.permission.GET_TOP_ACTIVITY_INFO" />
+    
     <!-- WindowManager -->
     <uses-permission android:name="android.permission.INTERNAL_SYSTEM_WINDOW" />
     <uses-permission android:name="android.permission.SYSTEM_ALERT_WINDOW" />
@@ -88,7 +91,8 @@
         android:allowBackup="false"
         android:hardwareAccelerated="true"
         android:label="@string/app_label"
-        android:icon="@*android:drawable/platlogo">
+        android:icon="@*android:drawable/platlogo"
+        android:supportsRtl="true">
 
         <!-- Broadcast receiver that gets the broadcast at boot time and starts
              up everything else.
@@ -284,5 +288,13 @@
 
         <activity android:name="com.android.systemui.Transparent"
             android:theme="@android:style/Theme.Translucent.NoTitleBar" />
+
+        <activity android:name=".statusbar.policy.activedisplay.DummyActivity"
+                  android:label=""
+                  android:taskAffinity=""
+                  android:excludeFromRecents="true"
+                  android:exported="true"
+                  android:theme="@style/Theme.DummyActivity">
+        </activity>
     </application>
 </manifest>

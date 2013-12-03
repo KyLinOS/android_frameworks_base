@@ -24,6 +24,7 @@ public class QSConstants {
         public static final String TILE_LTE = "toggleLte";
         public static final String TILE_WIMAX = "toggleWimax";
         public static final String TILE_PROFILE = "toggleProfile";
+        public static final String TILE_PERFORMANCE_PROFILE = "togglePerformanceProfile";
         public static final String TILE_NFC = "toggleNfc";
         public static final String TILE_USBTETHER = "toggleUsbTether";
         public static final String TILE_QUIETHOURS = "toggleQuietHours";
@@ -31,6 +32,7 @@ public class QSConstants {
         public static final String TILE_EXPANDEDDESKTOP = "toggleExpandedDesktop";
         public static final String TILE_CAMERA = "toggleCamera";
         public static final String TILE_FCHARGE = "toggleFCharge";
+        public static final String TILE_NETWORKADB = "toggleNetworkAdb";
 
         public static final String TILE_DELIMITER = "|";
         public static ArrayList<String> TILES_DEFAULT = new ArrayList<String>();
@@ -41,6 +43,8 @@ public class QSConstants {
             TILES_DEFAULT.add(TILE_SETTINGS);
             TILES_DEFAULT.add(TILE_WIFI);
             TILES_DEFAULT.add(TILE_MOBILEDATA);
+            TILES_DEFAULT.add(TILE_GPS);
+            TILES_DEFAULT.add(TILE_TORCH);
             TILES_DEFAULT.add(TILE_BATTERY);
             TILES_DEFAULT.add(TILE_AIRPLANE);
             TILES_DEFAULT.add(TILE_BLUETOOTH);

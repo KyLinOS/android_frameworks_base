@@ -1,6 +1,9 @@
 /*
  * Copyright (C) 2006 The Android Open Source Project
  * This code has been modified.  Portions copyright (C) 2010, T-Mobile USA, Inc.
+ * Copyright (c) 2013 The Linux Foundation. All rights reserved.
+ *
+ * Not a Contribution.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -17,34 +20,33 @@
 
 package com.android.server;
 
-import android.accounts.AccountManagerService;
 import android.app.ActivityManagerNative;
 import android.bluetooth.BluetoothAdapter;
 import android.content.ComponentName;
 import android.content.ContentResolver;
-import android.content.ContentService;
 import android.content.Context;
 import android.content.Intent;
 import android.content.IntentFilter;
 import android.content.pm.IPackageManager;
+import android.content.pm.PackageManager;
 import android.content.res.Configuration;
 import android.database.ContentObserver;
 import android.database.Cursor;
 import android.media.AudioService;
 import android.net.wifi.p2p.WifiP2pService;
+import android.os.Environment;
 import android.os.Handler;
 import android.os.HandlerThread;
 import android.os.Looper;
 import android.os.RemoteException;
-import android.os.SchedulingPolicyService;
 import android.os.ServiceManager;
 import android.os.StrictMode;
 import android.os.SystemClock;
 import android.os.SystemProperties;
 import android.os.UserHandle;
 import android.provider.Settings;
-import android.server.search.SearchManagerService;
 import android.service.dreams.DreamService;
+import android.text.TextUtils;
 import android.util.DisplayMetrics;
 import android.util.EventLog;
 import android.util.Log;
@@ -53,21 +55,26 @@ import android.view.WindowManager;
 
 import com.android.internal.os.BinderInternal;
 import com.android.internal.os.SamplingProfilerIntegration;
-import com.android.internal.widget.LockSettingsService;
 import com.android.server.accessibility.AccessibilityManagerService;
+import com.android.server.accounts.AccountManagerService;
 import com.android.server.am.ActivityManagerService;
 import com.android.server.am.BatteryStatsService;
+import com.android.server.content.ContentService;
 import com.android.server.display.DisplayManagerService;
 import com.android.server.dreams.DreamManagerService;
+import com.android.server.gesture.GestureService;
 import com.android.server.input.InputManagerService;
 import com.android.server.net.NetworkPolicyManagerService;
 import com.android.server.net.NetworkStatsService;
+import com.android.server.os.SchedulingPolicyService;
 import com.android.server.pm.Installer;
 import com.android.server.pm.PackageManagerService;
 import com.android.server.pm.UserManagerService;
 import com.android.server.power.PowerManagerService;
 import com.android.server.power.ShutdownThread;
+import com.android.server.search.SearchManagerService;
 import com.android.server.usb.UsbService;
+import com.android.server.wifi.WifiService;
 import com.android.server.wm.WindowManagerService;
 
 import dalvik.system.VMRuntime;
@@ -87,9 +94,6 @@ class ServerThread extends Thread {
     private static final String ENCRYPTING_STATE = "trigger_restart_min_framework";
     private static final String ENCRYPTED_STATE = "1";
 
-    public static final String FAST_CHARGE_DIR = "/sys/kernel/fast_charge";
-    public static final String FAST_CHARGE_FILE = "force_fast_charge";
-
     ContentResolver mContentResolver;
 
     void reportWtf(String msg, Throwable e) {
@@ -107,6 +111,32 @@ class ServerThread extends Thread {
                 Settings.Secure.ADB_PORT, 0);
             // setting this will control whether ADB runs on TCP/IP or USB
             SystemProperties.set("service.adb.tcp.port", Integer.toString(adbPort));
+        }
+    }
+
+    private class PerformanceProfileObserver extends ContentObserver {
+        private final String mPropName;
+        private final String mPropDef;
+
+        public PerformanceProfileObserver(Context ctx) {
+            super(null);
+            mPropName =
+                    ctx.getString(com.android.internal.R.string.config_perf_profile_prop);
+            mPropDef =
+                    ctx.getString(com.android.internal.R.string.config_perf_profile_default_entry);
+        }
+        @Override
+        public void onChange(boolean selfChange) {
+            setSystemSetting();
+        }
+
+        void setSystemSetting() {
+            String perfProfile = Settings.System.getString(mContentResolver,
+                    Settings.System.PERFORMANCE_PROFILE);
+            if (perfProfile == null) {
+                perfProfile = mPropDef;
+            }
+            SystemProperties.set(mPropName, perfProfile);
         }
     }
 
@@ -170,16 +200,17 @@ class ServerThread extends Thread {
         BluetoothManagerService bluetooth = null;
         DockObserver dock = null;
         RotationSwitchObserver rotateSwitch = null;
+        RegulatoryObserver regulatory = null;
         UsbService usb = null;
         SerialService serial = null;
         TwilightService twilight = null;
         UiModeManagerService uiMode = null;
         RecognitionManagerService recognition = null;
-        ThrottleService throttle = null;
         NetworkTimeUpdateService networkTimeUpdater = null;
         CommonTimeManagementService commonTimeMgmtService = null;
         InputManagerService inputManager = null;
         TelephonyRegistry telephonyRegistry = null;
+        MSimTelephonyRegistry msimTelephonyRegistry = null;
 
         // Create a shared handler thread for UI within the system server.
         // This thread is used by at least the following components:
@@ -235,9 +266,6 @@ class ServerThread extends Thread {
             installer = new Installer();
             installer.ping();
 
-            Slog.i(TAG, "Entropy Mixer");
-            ServiceManager.addService("entropy", new EntropyMixer());
-
             Slog.i(TAG, "Power Manager");
             power = new PowerManagerService();
             ServiceManager.addService(Context.POWER_SERVICE, power);
@@ -252,6 +280,12 @@ class ServerThread extends Thread {
             Slog.i(TAG, "Telephony Registry");
             telephonyRegistry = new TelephonyRegistry(context);
             ServiceManager.addService("telephony.registry", telephonyRegistry);
+
+            if (android.telephony.MSimTelephonyManager.getDefault().isMultiSimEnabled()) {
+                Slog.i(TAG, "MSimTelephony Registry");
+                msimTelephonyRegistry = new MSimTelephonyRegistry(context);
+                ServiceManager.addService("telephony.msim.registry", msimTelephonyRegistry);
+            }
 
             Slog.i(TAG, "Scheduling Policy");
             ServiceManager.addService(Context.SCHEDULING_POLICY_SERVICE,
@@ -285,11 +319,13 @@ class ServerThread extends Thread {
             }
 
             ActivityManagerService.setSystemProcess();
-            
+
+            Slog.i(TAG, "Entropy Mixer");
+            ServiceManager.addService("entropy", new EntropyMixer(context));
+
             Slog.i(TAG, "User Service");
             ServiceManager.addService(Context.USER_SERVICE,
                     UserManagerService.getInstance());
-
 
             mContentResolver = context.getContentResolver();
 
@@ -363,6 +399,9 @@ class ServerThread extends Thread {
                 Slog.i(TAG, "No Bluetooh Service (emulator)");
             } else if (factoryTest == SystemServer.FACTORY_TEST_LOW_LEVEL) {
                 Slog.i(TAG, "No Bluetooth Service (factory test)");
+            } else if (!context.getPackageManager().hasSystemFeature
+                       (PackageManager.FEATURE_BLUETOOTH)) {
+                Slog.i(TAG, "No Bluetooth Service (Bluetooth Hardware Not Present)");
             } else {
                 Slog.i(TAG, "Bluetooth Manager Service");
                 bluetooth = new BluetoothManagerService(context);
@@ -389,6 +428,7 @@ class ServerThread extends Thread {
         TextServicesManagerService tsms = null;
         LockSettingsService lockSettings = null;
         DreamManagerService dreamy = null;
+        GestureService gestureService = null;
 
         // Bring up services needed for UI.
         if (factoryTest != SystemServer.FACTORY_TEST_LOW_LEVEL) {
@@ -510,6 +550,14 @@ class ServerThread extends Thread {
                 reportWtf("starting NetworkPolicy Service", e);
             }
 
+            try {
+                Slog.i(TAG, "Regulatory Observer");
+                // Listen for country code changes
+                regulatory = new RegulatoryObserver(context);
+            } catch (Throwable e) {
+                reportWtf("starting RegulatoryObserver", e);
+            }
+
            try {
                 Slog.i(TAG, "Wi-Fi P2pService");
                 wifiP2p = new WifiP2pService(context);
@@ -546,15 +594,6 @@ class ServerThread extends Thread {
                         Context.NSD_SERVICE, serviceDiscovery);
             } catch (Throwable e) {
                 reportWtf("starting Service Discovery Service", e);
-            }
-
-            try {
-                Slog.i(TAG, "Throttle Service");
-                throttle = new ThrottleService(context);
-                ServiceManager.addService(
-                        Context.THROTTLE_SERVICE, throttle);
-            } catch (Throwable e) {
-                reportWtf("starting ThrottleService", e);
             }
 
             try {
@@ -824,6 +863,34 @@ class ServerThread extends Thread {
             } catch (Throwable e) {
                 Slog.e(TAG, "Failure starting AssetRedirectionManager Service", e);
             }
+
+            if (context.getResources().getBoolean(
+                    com.android.internal.R.bool.config_enableIrdaManagerService)) {
+                try {
+                    Slog.i(TAG, "IrdaManager Service");
+                    ServiceManager.addService("irda", new IrdaManagerService(context));
+                } catch (Throwable e) {
+                    Slog.e(TAG, "Failure starting Irda Service", e);
+                }
+            }
+
+            if (context.getResources().getBoolean(
+                    com.android.internal.R.bool.config_enableGestureService)) {
+                try {
+                    Slog.i(TAG, "Gesture Sensor Service");
+                    gestureService = new GestureService(context, inputManager);
+                    ServiceManager.addService("gesture", gestureService);
+                } catch (Throwable e) {
+                    Slog.e(TAG, "Failure starting Gesture Sensor Service", e);
+                }
+            }
+
+            try {
+                Slog.i(TAG, "IdleMaintenanceService");
+                new IdleMaintenanceService(context, battery);
+            } catch (Throwable e) {
+                reportWtf("starting IdleMaintenanceService", e);
+            }
         }
 
         // make sure the ADB_ENABLED setting value matches the secure property value
@@ -834,6 +901,16 @@ class ServerThread extends Thread {
         mContentResolver.registerContentObserver(
             Settings.Secure.getUriFor(Settings.Secure.ADB_PORT),
             false, new AdbPortObserver());
+        if (!TextUtils.isEmpty(context.getString(
+                com.android.internal.R.string.config_perf_profile_prop))) {
+            PerformanceProfileObserver observer = new PerformanceProfileObserver(context);
+            mContentResolver.registerContentObserver(
+                    Settings.System.getUriFor(Settings.System.PERFORMANCE_PROFILE),
+                    false, observer);
+
+            // Sync the system property with the current setting
+            observer.setSystemSetting();
+        }
 
         // Before things start rolling, be sure we have decided whether
         // we are in safe mode.
@@ -916,6 +993,14 @@ class ServerThread extends Thread {
             reportWtf("making Display Manager Service ready", e);
         }
 
+        if (gestureService != null) {
+            try {
+                gestureService.systemReady();
+            } catch (Throwable e) {
+                reportWtf("making Gesture Sensor Service ready", e);
+            }
+        }
+
         IntentFilter filter = new IntentFilter();
         filter.addAction(Intent.ACTION_APP_LAUNCH_FAILURE);
         filter.addAction(Intent.ACTION_APP_LAUNCH_FAILURE_RESET);
@@ -936,7 +1021,6 @@ class ServerThread extends Thread {
         final DockObserver dockF = dock;
         final RotationSwitchObserver rotateSwitchF = rotateSwitch;
         final UsbService usbF = usb;
-        final ThrottleService throttleF = throttle;
         final TwilightService twilightF = twilight;
         final UiModeManagerService uiModeF = uiMode;
         final AppWidgetService appWidgetF = appWidget;
@@ -952,6 +1036,7 @@ class ServerThread extends Thread {
         final DreamManagerService dreamyF = dreamy;
         final InputManagerService inputManagerF = inputManager;
         final TelephonyRegistry telephonyRegistryF = telephonyRegistry;
+        final MSimTelephonyRegistry msimTelephonyRegistryF = msimTelephonyRegistry;
 
         // We now tell the activity manager it is okay to run third party
         // code.  It will call back into us once it has gotten to the state
@@ -962,6 +1047,11 @@ class ServerThread extends Thread {
             public void run() {
                 Slog.i(TAG, "Making services ready");
 
+                try {
+                    ActivityManagerService.self().startObservingNativeCrashes();
+                } catch (Throwable e) {
+                    reportWtf("observing native crashes", e);
+                }
                 if (!headless) startSystemUi(contextF);
                 try {
                     if (mountServiceF != null) mountServiceF.systemReady();
@@ -1054,11 +1144,6 @@ class ServerThread extends Thread {
                     reportWtf("making Country Detector Service ready", e);
                 }
                 try {
-                    if (throttleF != null) throttleF.systemReady();
-                } catch (Throwable e) {
-                    reportWtf("making Throttle Service ready", e);
-                }
-                try {
                     if (networkTimeUpdaterF != null) networkTimeUpdaterF.systemReady();
                 } catch (Throwable e) {
                     reportWtf("making Network Time Service ready", e);
@@ -1089,6 +1174,11 @@ class ServerThread extends Thread {
                 } catch (Throwable e) {
                     reportWtf("making TelephonyRegistry ready", e);
                 }
+                try {
+                    if (msimTelephonyRegistryF != null) msimTelephonyRegistryF.systemReady();
+                } catch (Throwable e) {
+                    reportWtf("making TelephonyRegistry ready", e);
+                }
             }
         });
 
@@ -1103,23 +1193,27 @@ class ServerThread extends Thread {
 
     static final void startSystemUi(Context context) {
         // restore fast charge state before starting systemui
-        boolean enabled = Settings.System.getInt(context.getContentResolver(), Settings.System.FCHARGE_ENABLED, 0) == 1;
+        boolean enabled = Settings.System.getIntForUser(context.getContentResolver(), Settings.System.FCHARGE_ENABLED, 0, UserHandle.USER_CURRENT) == 1;
             try {
-                    File fastcharge = new File(FAST_CHARGE_DIR, FAST_CHARGE_FILE);
-                    if (fastcharge.exists()) {
-                        FileWriter fwriter = new FileWriter(fastcharge);
-                        BufferedWriter bwriter = new BufferedWriter(fwriter);
-                        bwriter.write(enabled ? "1" : "0");
-                        bwriter.close();
-                    } else {
-                        Log.e("FChargeToggle", "No fast charge support");
+                    String fchargePath = context.getResources()
+                            .getString(com.mokee.internal.R.string.config_fastChargePath);
+                    if (!fchargePath.isEmpty()) {
+                        File fastcharge = new File(fchargePath);
+                        if (fastcharge.exists()) {
+                            FileWriter fwriter = new FileWriter(fastcharge);
+                            BufferedWriter bwriter = new BufferedWriter(fwriter);
+                            bwriter.write(enabled ? "1" : "0");
+                            bwriter.close();
+                        } else {
+                            Log.e("FChargeToggle", "No fast charge support");
+                        }
                     }
                 } catch (IOException e) {
                     Log.e("FChargeToggle", "Couldn't write fast_charge file");
-                    Settings.System.putInt(context.getContentResolver(),
-                         Settings.System.FCHARGE_ENABLED, 0);
+                    Settings.System.putIntForUser(context.getContentResolver(),
+                         Settings.System.FCHARGE_ENABLED, 0, UserHandle.USER_CURRENT);
                 }
- 
+
         Intent intent = new Intent();
         intent.setComponent(new ComponentName("com.android.systemui",
                     "com.android.systemui.SystemUIService"));
@@ -1177,6 +1271,8 @@ public class SystemServer {
         // The system server has to run all of the time, so it needs to be
         // as efficient as possible with its memory usage.
         VMRuntime.getRuntime().setTargetHeapUtilization(0.8f);
+
+        Environment.setUserRequired(true);
 
         System.loadLibrary("android_servers");
         init1(args);

@@ -1,4 +1,3 @@
-
 package com.android.systemui.statusbar;
 
 import android.graphics.Canvas;

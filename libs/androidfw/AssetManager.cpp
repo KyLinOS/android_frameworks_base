@@ -20,6 +20,7 @@
 //
 
 #define LOG_TAG "asset"
+#define ATRACE_TAG ATRACE_TAG_RESOURCES
 //#define LOG_NDEBUG 0
 
 #include <androidfw/Asset.h>
@@ -33,6 +34,9 @@
 #include <utils/threads.h>
 #include <utils/Timers.h>
 #include <utils/ZipFileRO.h>
+#ifdef HAVE_ANDROID_OS
+#include <cutils/trace.h>
+#endif
 
 #include <assert.h>
 #include <dirent.h>
@@ -52,6 +56,14 @@
     _rc; })
 #endif
 
+#ifdef HAVE_ANDROID_OS
+#define MY_TRACE_BEGIN(x) ATRACE_BEGIN(x)
+#define MY_TRACE_END() ATRACE_END()
+#else
+#define MY_TRACE_BEGIN(x)
+#define MY_TRACE_END()
+#endif
+
 using namespace android;
 
 /*
@@ -63,6 +75,7 @@ static const char* kDefaultVendor = "default";
 static const char* kAssetsRoot = "assets";
 static const char* kAppZipName = NULL; //"classes.jar";
 static const char* kSystemAssets = "framework/framework-res.apk";
+static const char* kMoKeeAssets = "framework/mokee-res.apk";
 static const char* kIdmapCacheDir = "resource-cache";
 
 static const char* kExcludeExtension = ".EXCLUDE";
@@ -380,7 +393,13 @@ bool AssetManager::addDefaultAssets()
     String8 path(root);
     path.appendPath(kSystemAssets);
 
-    return addAssetPath(path, NULL);
+    if (!addAssetPath(path, NULL)) {
+        return false;
+    }
+
+    String8 pathExt(root);
+    pathExt.appendPath(kMoKeeAssets);
+    return addAssetPath(pathExt, NULL);
 }
 
 void* AssetManager::nextAssetPath(void* cookie) const

@@ -16,8 +16,6 @@
 
 package android.app;
 
-import android.annotation.MokeeHook;
-import android.annotation.MokeeHook.MokeeHookType;
 import android.content.ComponentName;
 import android.content.ContentResolver;
 import android.content.Intent;
@@ -50,9 +48,9 @@ import android.content.res.Resources;
 import android.content.res.XmlResourceParser;
 import android.graphics.drawable.Drawable;
 import android.net.Uri;
-import android.os.Binder;
 import android.os.Process;
 import android.os.RemoteException;
+import android.os.UserHandle;
 import android.util.Log;
 import android.view.Display;
 
@@ -136,6 +134,21 @@ final class ApplicationPackageManager extends PackageManager {
             int[] gids = mPM.getPackageGids(packageName);
             if (gids == null || gids.length > 0) {
                 return gids;
+            }
+        } catch (RemoteException e) {
+            throw new RuntimeException("Package manager has died", e);
+        }
+
+        throw new NameNotFoundException(packageName);
+    }
+
+    @Override
+    public int getPackageUid(String packageName, int userHandle)
+            throws NameNotFoundException {
+        try {
+            int uid = mPM.getPackageUid(packageName, userHandle);
+            if (uid >= 0) {
+                return uid;
             }
         } catch (RemoteException e) {
             throw new RuntimeException("Package manager has died", e);
@@ -414,17 +427,22 @@ final class ApplicationPackageManager extends PackageManager {
     @Override
     public List<PackageInfo> getInstalledPackages(int flags, int userId) {
         try {
-            final List<PackageInfo> packageInfos = new ArrayList<PackageInfo>();
-            PackageInfo lastItem = null;
-            ParceledListSlice<PackageInfo> slice;
+            ParceledListSlice<PackageInfo> slice = mPM.getInstalledPackages(flags, userId);
+            return slice.getList();
+        } catch (RemoteException e) {
+            throw new RuntimeException("Package manager has died", e);
+        }
+    }
 
-            do {
-                final String lastKey = lastItem != null ? lastItem.packageName : null;
-                slice = mPM.getInstalledPackages(flags, lastKey, userId);
-                lastItem = slice.populateList(packageInfos, PackageInfo.CREATOR);
-            } while (!slice.isLastSlice());
-
-            return packageInfos;
+    @SuppressWarnings("unchecked")
+    @Override
+    public List<PackageInfo> getPackagesHoldingPermissions(
+            String[] permissions, int flags) {
+        final int userId = mContext.getUserId();
+        try {
+            ParceledListSlice<PackageInfo> slice = mPM.getPackagesHoldingPermissions(
+                    permissions, flags, userId);
+            return slice.getList();
         } catch (RemoteException e) {
             throw new RuntimeException("Package manager has died", e);
         }
@@ -448,17 +466,8 @@ final class ApplicationPackageManager extends PackageManager {
     public List<ApplicationInfo> getInstalledApplications(int flags) {
         final int userId = mContext.getUserId();
         try {
-            final List<ApplicationInfo> applicationInfos = new ArrayList<ApplicationInfo>();
-            ApplicationInfo lastItem = null;
-            ParceledListSlice<ApplicationInfo> slice;
-
-            do {
-                final String lastKey = lastItem != null ? lastItem.packageName : null;
-                slice = mPM.getInstalledApplications(flags, lastKey, userId);
-                lastItem = slice.populateList(applicationInfos, ApplicationInfo.CREATOR);
-            } while (!slice.isLastSlice());
-
-            return applicationInfos;
+            ParceledListSlice<ApplicationInfo> slice = mPM.getInstalledApplications(flags, userId);
+            return slice.getList();
         } catch (RemoteException e) {
             throw new RuntimeException("Package manager has died", e);
         }
@@ -754,13 +763,12 @@ final class ApplicationPackageManager extends PackageManager {
             getActivityInfo(activityName, 0).applicationInfo);
     }
 
-    @MokeeHook(MokeeHook.MokeeHookType.CHANGE_CODE)
     @Override public Resources getResourcesForApplication(
         ApplicationInfo app) throws NameNotFoundException {
         if (app.packageName.equals("system")) {
             return mContext.mMainThread.getSystemContext().getResources();
         }
-        Resources r = mContext.mMainThread.getTopLevelResources(app.packageName,
+        Resources r = mContext.mMainThread.getTopLevelResources(
                 app.uid == Process.myUid() ? app.sourceDir : app.publicSourceDir,
                         Display.DEFAULT_DISPLAY, null, mContext.mPackageInfo);
         if (r != null) {
@@ -822,8 +830,7 @@ final class ApplicationPackageManager extends PackageManager {
         mPM = pm;
     }
 
-    @MokeeHook(MokeeHook.MokeeHookType.CHANGE_ACCESS)
-    static Drawable getCachedIcon(ResourceName name) {
+    private Drawable getCachedIcon(ResourceName name) {
         synchronized (sSync) {
             WeakReference<Drawable.ConstantState> wr = sIconCache.get(name);
             if (DEBUG_ICONS) Log.v(TAG, "Get cached weak drawable ref for "
@@ -849,8 +856,7 @@ final class ApplicationPackageManager extends PackageManager {
         return null;
     }
 
-    @MokeeHook(MokeeHook.MokeeHookType.CHANGE_ACCESS)
-    static void putCachedIcon(ResourceName name, Drawable dr) {
+    private void putCachedIcon(ResourceName name, Drawable dr) {
         synchronized (sSync) {
             sIconCache.put(name, new WeakReference<Drawable.ConstantState>(dr.getConstantState()));
             if (DEBUG_ICONS) Log.v(TAG, "Added cached drawable state for " + name + ": " + dr);
@@ -901,8 +907,7 @@ final class ApplicationPackageManager extends PackageManager {
         }
     }
 
-    @MokeeHook(MokeeHook.MokeeHookType.CHANGE_ACCESS)
-    static final class ResourceName {
+    private static final class ResourceName {
         final String packageName;
         final int iconId;
 
@@ -1073,7 +1078,7 @@ final class ApplicationPackageManager extends PackageManager {
     public int installExistingPackage(String packageName)
             throws NameNotFoundException {
         try {
-            int res = mPM.installExistingPackage(packageName);
+            int res = mPM.installExistingPackageAsUser(packageName, UserHandle.myUserId());
             if (res == INSTALL_FAILED_INVALID_URI) {
                 throw new NameNotFoundException("Package " + packageName + " doesn't exist");
             }
@@ -1135,7 +1140,7 @@ final class ApplicationPackageManager extends PackageManager {
     @Override
     public void deletePackage(String packageName, IPackageDeleteObserver observer, int flags) {
         try {
-            mPM.deletePackage(packageName, observer, flags);
+            mPM.deletePackageAsUser(packageName, observer, UserHandle.myUserId(), flags);
         } catch (RemoteException e) {
             // Should never happen!
         }
@@ -1287,7 +1292,8 @@ final class ApplicationPackageManager extends PackageManager {
     public void setApplicationEnabledSetting(String packageName,
                                              int newState, int flags) {
         try {
-            mPM.setApplicationEnabledSetting(packageName, newState, flags, mContext.getUserId());
+            mPM.setApplicationEnabledSetting(packageName, newState, flags,
+                    mContext.getUserId(), mContext.getBasePackageName());
         } catch (RemoteException e) {
             // Should never happen!
         }
@@ -1301,46 +1307,6 @@ final class ApplicationPackageManager extends PackageManager {
             // Should never happen!
         }
         return PackageManager.COMPONENT_ENABLED_STATE_DEFAULT;
-    }
-
-    @Override
-    public void setPrivacyGuardSetting(String packageName, boolean enabled) {
-        try {
-            mPM.setPrivacyGuardSetting(packageName, enabled, mContext.getUserId());
-        } catch (RemoteException e) {
-            // Should never happen!
-        }
-    }
-
-    @Override
-    public boolean getPrivacyGuardSetting(String packageName) {
-        try {
-            return mPM.getPrivacyGuardSetting(packageName, mContext.getUserId());
-        } catch (RemoteException e) {
-            // Should never happen!
-        }
-        return false;
-    }
-
-    @MokeeHook(MokeeHook.MokeeHookType.NEW_METHOD)
-    @Override
-    public String[] getRevokedPermissions(String packageName) {
-        try {
-            return mPM.getRevokedPermissions(packageName);
-        } catch (RemoteException e) {
-            // Should never happen!
-        }
-        return new String[0];
-    }
-
-    @MokeeHook(MokeeHook.MokeeHookType.NEW_METHOD)
-    @Override
-    public void setRevokedPermissions(String packageName, String[] perms) {
-        try {
-            mPM.setRevokedPermissions(packageName, perms);
-        } catch (RemoteException e) {
-            // Should never happen!
-        }
     }
 
     /**

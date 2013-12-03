@@ -23,8 +23,10 @@ import android.app.ActivityManager;
 import android.app.ActivityManagerNative;
 import android.app.ActivityOptions;
 import android.app.TaskStackBuilder;
+import android.content.ComponentName;
 import android.content.Context;
 import android.content.Intent;
+import android.content.pm.ActivityInfo;
 import android.content.pm.ApplicationInfo;
 import android.content.pm.PackageManager;
 import android.content.pm.PackageManager.NameNotFoundException;
@@ -43,12 +45,16 @@ import android.os.UserHandle;
 import android.provider.Settings;
 import android.util.AttributeSet;
 import android.util.Log;
+import android.view.IWindowManager;
 import android.view.LayoutInflater;
 import android.view.MenuItem;
 import android.view.MotionEvent;
 import android.view.View;
 import android.view.View.OnClickListener;
 import android.view.ViewGroup;
+import android.view.ViewPropertyAnimator;
+import android.view.ViewRootImpl;
+import android.view.WindowManagerGlobal;
 import android.view.accessibility.AccessibilityEvent;
 import android.view.animation.AnimationUtils;
 import android.view.animation.DecelerateInterpolator;
@@ -70,6 +76,7 @@ import com.android.systemui.statusbar.tablet.StatusBarPanel;
 import com.android.systemui.statusbar.tablet.TabletStatusBar;
 
 import java.util.ArrayList;
+import java.util.List;
 
 public class RecentsPanelView extends FrameLayout implements OnClickListener, OnItemClickListener, RecentsCallback,
         StatusBarPanel, Animator.AnimatorListener {
@@ -87,6 +94,7 @@ public class RecentsPanelView extends FrameLayout implements OnClickListener, On
     private boolean mAnimateIconOfFirstTask;
     private boolean mWaitingForWindowAnimation;
     private long mWindowAnimationStartTime;
+    private boolean mCallUiHiddenBeforeNextReload;
 
     private RecentTasksLoader mRecentTasksLoader;
     private ArrayList<TaskDescription> mRecentTaskDescriptions;
@@ -188,7 +196,7 @@ public class RecentsPanelView extends FrameLayout implements OnClickListener, On
             if (convertView == null) {
                 convertView = createView(parent);
             }
-            ViewHolder holder = (ViewHolder) convertView.getTag();
+            final ViewHolder holder = (ViewHolder) convertView.getTag();
 
             // index is reverse since most recent appears at the bottom...
             final int index = mRecentTaskDescriptions.size() - position - 1;
@@ -204,24 +212,28 @@ public class RecentsPanelView extends FrameLayout implements OnClickListener, On
             }
             if (index == 0) {
                 if (mAnimateIconOfFirstTask) {
-                    if (mItemToAnimateInWhenWindowAnimationIsFinished != null) {
-                        holder.iconView.setAlpha(1f);
-                        holder.iconView.setTranslationX(0f);
-                        holder.iconView.setTranslationY(0f);
-                        holder.labelView.setAlpha(1f);
-                        holder.labelView.setTranslationX(0f);
-                        holder.labelView.setTranslationY(0f);
-                        if (holder.calloutLine != null) {
-                            holder.calloutLine.setAlpha(1f);
-                            holder.calloutLine.setTranslationX(0f);
-                            holder.calloutLine.setTranslationY(0f);
+                    ViewHolder oldHolder = mItemToAnimateInWhenWindowAnimationIsFinished;
+                    if (oldHolder != null) {
+                        oldHolder.iconView.setAlpha(1f);
+                        oldHolder.iconView.setTranslationX(0f);
+                        oldHolder.iconView.setTranslationY(0f);
+                        oldHolder.labelView.setAlpha(1f);
+                        oldHolder.labelView.setTranslationX(0f);
+                        oldHolder.labelView.setTranslationY(0f);
+                        if (oldHolder.calloutLine != null) {
+                            oldHolder.calloutLine.setAlpha(1f);
+                            oldHolder.calloutLine.setTranslationX(0f);
+                            oldHolder.calloutLine.setTranslationY(0f);
                         }
                     }
                     mItemToAnimateInWhenWindowAnimationIsFinished = holder;
-                    final int translation = -getResources().getDimensionPixelSize(
+                    int translation = -getResources().getDimensionPixelSize(
                             R.dimen.status_bar_recents_app_icon_translate_distance);
                     final Configuration config = getResources().getConfiguration();
                     if (config.orientation == Configuration.ORIENTATION_PORTRAIT) {
+                        if (getLayoutDirection() == View.LAYOUT_DIRECTION_RTL) {
+                            translation = -translation;
+                        }
                         holder.iconView.setAlpha(0f);
                         holder.iconView.setTranslationX(translation);
                         holder.labelView.setAlpha(0f);
@@ -325,8 +337,15 @@ public class RecentsPanelView extends FrameLayout implements OnClickListener, On
 
     public void show(boolean show, ArrayList<TaskDescription> recentTaskDescriptions,
             boolean firstScreenful, boolean animateIconOfFirstTask) {
-        mAnimateIconOfFirstTask = animateIconOfFirstTask;
-        mWaitingForWindowAnimation = animateIconOfFirstTask;
+        if (show && mCallUiHiddenBeforeNextReload) {
+            onUiHidden();
+            recentTaskDescriptions = null;
+            mAnimateIconOfFirstTask = false;
+            mWaitingForWindowAnimation = false;
+        } else {
+            mAnimateIconOfFirstTask = animateIconOfFirstTask;
+            mWaitingForWindowAnimation = animateIconOfFirstTask;
+        }
         if (show) {
             mWaitingToShow = true;
             refreshRecentTasksList(recentTaskDescriptions, firstScreenful);
@@ -373,13 +392,23 @@ public class RecentsPanelView extends FrameLayout implements OnClickListener, On
         } else {
             mWaitingToShow = false;
             // call onAnimationEnd() and clearRecentTasksList() in onUiHidden()
+            mCallUiHiddenBeforeNextReload = true;
             if (mPopup != null) {
                 mPopup.dismiss();
             }
         }
     }
 
+    protected void onAttachedToWindow () {
+        super.onAttachedToWindow();
+        final ViewRootImpl root = getViewRootImpl();
+        if (root != null) {
+            root.setDrawDuringWindowsAnimating(true);
+        }
+    }
+
     public void onUiHidden() {
+        mCallUiHiddenBeforeNextReload = false;
         if (!mShowing && mRecentTaskDescriptions != null) {
             onAnimationEnd(null);
             clearRecentTasksList();
@@ -392,6 +421,10 @@ public class RecentsPanelView extends FrameLayout implements OnClickListener, On
 
     public void dismissAndGoBack() {
         mRecentsActivity.dismissAndGoBack();
+    }
+
+    public void dismissAndDoNothing() {
+        ((RecentsActivity) mContext).dismissAndDoNothing();
     }
 
     public void onAnimationCancel(Animator animation) {
@@ -468,6 +501,7 @@ public class RecentsPanelView extends FrameLayout implements OnClickListener, On
 
         mRecentsScrim = findViewById(R.id.recents_bg_protect);
         mRecentsNoApps = findViewById(R.id.recents_no_apps);
+
         mClearRecents = (ImageView) findViewById(R.id.recents_clear);
         mShortcutBar = (ScrollView) findViewById(R.id.shortcut_bar);
         mAlarmClock = (ImageView) findViewById(R.id.shortcut_alarmclock);
@@ -597,7 +631,7 @@ public class RecentsPanelView extends FrameLayout implements OnClickListener, On
 		case R.id.shortcut_fuubo:
 			startApplication("me.imid.fuubo","me.imid.fuubo.ui.Fuubo");
 			break;
-	}	
+    	}	
     }
 
     public void setMinSwipeAlpha(float minAlpha) {
@@ -701,11 +735,14 @@ public class RecentsPanelView extends FrameLayout implements OnClickListener, On
             final int duration = 250;
             final ViewHolder holder = mItemToAnimateInWhenWindowAnimationIsFinished;
             final TimeInterpolator cubic = new DecelerateInterpolator(1.5f);
+            FirstFrameAnimatorHelper.initializeDrawListener(holder.iconView);
             for (View v :
                 new View[] { holder.iconView, holder.labelView, holder.calloutLine }) {
                 if (v != null) {
-                    v.animate().translationX(0).translationY(0).alpha(1f).setStartDelay(startDelay)
+                    ViewPropertyAnimator vpa = v.animate().translationX(0).translationY(0)
+                            .alpha(1f).setStartDelay(startDelay)
                             .setDuration(duration).setInterpolator(cubic);
+                    FirstFrameAnimatorHelper h = new FirstFrameAnimatorHelper(vpa, v);
                 }
             }
             mItemToAnimateInWhenWindowAnimationIsFinished = null;
@@ -824,6 +861,16 @@ public class RecentsPanelView extends FrameLayout implements OnClickListener, On
         boolean floating = (intent.getFlags() & Intent.FLAG_FLOATING_WINDOW) == Intent.FLAG_FLOATING_WINDOW;
         if (ad.taskId >= 0 && !floating) {
             // This is an active task; it should just go to the foreground.
+            // If that task was split viewed, a normal press wil resume it to
+            // normal fullscreen view
+            IWindowManager wm = (IWindowManager) WindowManagerGlobal.getWindowManagerService();
+            try {
+                if (DEBUG) Log.v(TAG, "Restoring window full screen after split, because of normal tap");
+                wm.setTaskSplitView(ad.taskId, false);
+            } catch (RemoteException e) {
+                Log.e(TAG, "Could not setTaskSplitView to fullscreen", e);
+            }
+
             am.moveTaskToFront(ad.taskId, ActivityManager.MOVE_TASK_WITH_HOME,
                     opts);
         } else {
@@ -834,10 +881,14 @@ public class RecentsPanelView extends FrameLayout implements OnClickListener, On
                         | Intent.FLAG_ACTIVITY_NEW_TASK);
             }
             if (DEBUG) Log.v(TAG, "Starting activity " + intent);
-            context.startActivityAsUser(intent, opts,
-                    new UserHandle(UserHandle.USER_CURRENT));
-            if (floating && mRecentsActivity != null) {
-                mRecentsActivity.finish();
+            try {
+                context.startActivityAsUser(intent, opts,
+                        new UserHandle(UserHandle.USER_CURRENT));
+                if (floating && mRecentsActivity != null) {
+                        mRecentsActivity.finish();
+                }
+            } catch (SecurityException e) {
+                Log.e(TAG, "Recents does not have the permission to launch " + intent, e);
             }
         }
         if (usingDrawingCache) {
@@ -915,6 +966,95 @@ public class RecentsPanelView extends FrameLayout implements OnClickListener, On
                         final TaskDescription ad = viewHolder.taskDescription;
                         startApplicationDetailsActivity(ad.packageName);
                         show(false);
+                    } else {
+                        throw new IllegalStateException("Oops, no tag on view " + selectedView);
+                    }
+                } else if (item.getItemId() == R.id.recent_launch_floating) {
+                    ViewHolder viewHolder = (ViewHolder) selectedView.getTag();
+                    if (viewHolder != null) {
+                        final TaskDescription ad = viewHolder.taskDescription;
+                        dismissAndGoBack();
+                        Intent intent = ad.intent;
+                        intent.addFlags(Intent.FLAG_FLOATING_WINDOW
+                                | Intent.FLAG_ACTIVITY_CLEAR_TASK);
+                        intent.setFlags(intent.getFlags() & ~Intent.FLAG_ACTIVITY_LAUNCHED_FROM_HISTORY);
+                        getContext().startActivity(intent);
+                    }
+                } else if (item.getItemId() == R.id.recent_add_split_view) {
+                    // Either start a new activity in split view, or move the current task
+                    // to front, but resized
+                    ViewHolder holder = (ViewHolder)selectedView.getTag();
+
+                    if (holder != null) {
+                        final Context context = selectedView.getContext();
+                        final ActivityManager am = (ActivityManager)
+                            context.getSystemService(Context.ACTIVITY_SERVICE);
+                        final IWindowManager wm = (IWindowManager) WindowManagerGlobal.getWindowManagerService();
+
+                        TaskDescription ad = holder.taskDescription;
+
+                        show(false);
+                        dismissAndDoNothing();
+
+                        // If we weren't on the homescreen, resize the previous activity (if not already split)
+                        final List<ActivityManager.RecentTaskInfo> recentTasks =
+                            am.getRecentTasks(2, ActivityManager.RECENT_IGNORE_UNAVAILABLE);
+
+                        if (recentTasks != null && recentTasks.size() > 0) {
+                            final PackageManager pm = mContext.getPackageManager();
+                            ActivityInfo homeInfo = new Intent(Intent.ACTION_MAIN).addCategory(Intent.CATEGORY_HOME)
+                                    .resolveActivityInfo(pm, 0);
+                            ActivityManager.RecentTaskInfo taskInfo = recentTasks.get(0);
+                            Intent intent = new Intent(taskInfo.baseIntent);
+                            if (taskInfo.origActivity != null) {
+                                intent.setComponent(taskInfo.origActivity);
+                            }
+
+                            ComponentName component = intent.getComponent();
+
+                            if (homeInfo == null
+                                || !homeInfo.packageName.equals(component.getPackageName())
+                                || !homeInfo.name.equals(component.getClassName())) {
+                                // This is not the home activity, so split it
+                                try {
+                                    wm.setTaskSplitView(taskInfo.persistentId, true);
+                                } catch (RemoteException e) {
+                                    Log.e(TAG, "Could not set previous task to split view", e);
+                                }
+
+                                // We move this to front first, then our activity, so it updates
+                                am.moveTaskToFront(taskInfo.persistentId, 0, null);
+                            }
+                        }
+
+                        if (ad.taskId >= 0) {
+                            // The task is already launched. The Activity will pull its split
+                            // information from WindowManagerService once it resumes, so we
+                            // set its state here.
+                            try {
+                                wm.setTaskSplitView(ad.taskId, true);
+                            } catch (RemoteException e) {
+                                Log.e(TAG, "Could not setTaskSplitView", e);
+                            }
+                            am.moveTaskToFront(ad.taskId, 0, null);
+                        } else {
+                            // The app has been killed (we have no taskId for it), so we start
+                            // a new one with the SPLIT_VIEW flag
+                            Intent intent = ad.intent;
+                            intent.addFlags(Intent.FLAG_ACTIVITY_SPLIT_VIEW
+                                | Intent.FLAG_ACTIVITY_NEW_TASK);
+
+                            if (DEBUG) Log.v(TAG, "Starting split view activity " + intent);
+
+                            try {
+                                context.startActivityAsUser(intent, null,
+                                        new UserHandle(UserHandle.USER_CURRENT));
+                            } catch (SecurityException e) {
+                                Log.e(TAG, "Recents does not have the permission to launch " + intent, e);
+                            }
+                        }
+
+                        
                     } else {
                         throw new IllegalStateException("Oops, no tag on view " + selectedView);
                     }

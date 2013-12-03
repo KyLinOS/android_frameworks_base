@@ -30,27 +30,25 @@
         android:id="@+id/datetime"
         android:layout_width="wrap_content"
         android:layout_height="match_parent"
-        android:paddingLeft="8dp"
-        android:paddingRight="8dp"
-        android:background="@drawable/ic_notify_button_bg"
-        android:enabled="false"
+        android:paddingStart="8dp"
+        android:paddingEnd="8dp"
         >
         <com.android.systemui.statusbar.policy.Clock
             android:id="@+id/clock"
             android:layout_width="wrap_content"
-            android:layout_height="wrap_content"
-            android:layout_marginRight="8dp"
+            android:layout_height="match_parent"
+            android:paddingEnd="4dp"
             android:singleLine="true"
             android:textAppearance="@style/TextAppearance.StatusBar.Expanded.Clock"
-            android:layout_centerVertical="true"
+            android:gravity="center_vertical"
             android:clickable="true"
             />
 
         <RelativeLayout
             android:layout_width="wrap_content"
-            android:layout_height="wrap_content"
-            android:layout_centerVertical="true"
-            android:layout_toRightOf="@id/clock"           
+            android:layout_height="match_parent"
+            android:gravity="center_vertical"
+            android:layout_toEndOf="@id/clock"           
             >	
 		<com.android.systemui.statusbar.policy.DateView 
 		    android:id="@+id/date"
@@ -88,11 +86,10 @@
         android:textColor="#00A040"
         android:padding="2dp"
         />
-        
+
     <ImageView android:id="@+id/halo_button"
         android:layout_width="50dp"
         android:layout_height="50dp"
-        android:layout_marginLeft="5dp"
         android:scaleType="center"
         android:src="@drawable/ic_notify_halo"
         android:contentDescription="@string/accessibility_halo"
@@ -101,7 +98,7 @@
     <ImageView android:id="@+id/clear_all_button"
         android:layout_width="50dp"
         android:layout_height="50dp"
-        android:layout_marginLeft="5dp"
+        android:layout_marginStart="3dp"
         android:scaleType="center"
         android:src="@drawable/ic_notify_clear"
         android:contentDescription="@string/accessibility_clear_all"
@@ -110,7 +107,7 @@
     <FrameLayout android:id="@+id/settings_button_holder"
         android:layout_width="50dp"
         android:layout_height="50dp"
-        android:layout_marginLeft="5dp"
+        android:layout_marginStart="3dp"
         >
         <ImageView android:id="@+id/settings_button"
             android:layout_width="50dp"

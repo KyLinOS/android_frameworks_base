@@ -28,6 +28,7 @@ import android.content.res.Configuration;
 import android.content.res.Resources;
 import android.database.ContentObserver;
 import android.media.AudioManager;
+import android.os.Bundle;
 import android.os.Handler;
 import android.os.RemoteException;
 import android.os.ServiceManager;
@@ -36,6 +37,7 @@ import android.os.Vibrator;
 import android.provider.Settings;
 import android.text.TextUtils;
 import android.util.AttributeSet;
+import android.util.EventLog;
 import android.util.Slog;
 import android.view.IWindowManager;
 import android.view.MotionEvent;
@@ -50,6 +52,8 @@ import com.android.internal.util.cm.NavigationRingHelpers;
 import com.android.internal.widget.multiwaveview.GlowPadView;
 import com.android.internal.widget.multiwaveview.GlowPadView.OnTriggerListener;
 import com.android.internal.widget.multiwaveview.TargetDrawable;
+
+import com.android.systemui.EventLogTags;
 import com.android.systemui.R;
 import com.android.systemui.cm.ActionTarget;
 import com.android.systemui.recent.StatusBarTouchProxy;
@@ -66,6 +70,7 @@ public class SearchPanelView extends FrameLayout implements
     private static final int SEARCH_PANEL_HOLD_DURATION = 0;
     static final String TAG = "SearchPanelView";
     static final boolean DEBUG = TabletStatusBar.DEBUG || PhoneStatusBar.DEBUG || false;
+    public static final boolean DEBUG_GESTURES = true;
     private final Context mContext;
     private BaseStatusBar mBar;
     private StatusBarTouchProxy mStatusBarTouchProxy;
@@ -111,7 +116,24 @@ public class SearchPanelView extends FrameLayout implements
 
         public void onTrigger(View v, final int target) {
             final int resId = mGlowPadView.getResourceIdForTarget(target);
-            mActionTarget.launchAction(mTargetActivities[target - mStartPosOffset]);
+            String action = mTargetActivities[target - mStartPosOffset];
+            boolean isAssist = NavigationRingConstants.ACTION_ASSIST.equals(action);
+            Bundle options = null;
+
+            if (isAssist) {
+                ActivityOptions opts = ActivityOptions.makeCustomAnimation(mContext,
+                        R.anim.search_launch_enter, R.anim.search_launch_exit,
+                        getHandler(), SearchPanelView.this);
+                options = opts.toBundle();
+                mWaitingForLaunch = true;
+                vibrate();
+            }
+
+            boolean result = mActionTarget.launchAction(
+                    mTargetActivities[target - mStartPosOffset], options);
+            if (!result && isAssist) {
+                onAnimationStarted();
+            }
         }
 
         public void onFinishFinalAnimation() {
@@ -306,6 +328,17 @@ public class SearchPanelView extends FrameLayout implements
         }
     }
 
+    @Override
+    public boolean onTouchEvent(MotionEvent event) {
+        if (DEBUG_GESTURES) {
+            if (event.getActionMasked() != MotionEvent.ACTION_MOVE) {
+                EventLog.writeEvent(EventLogTags.SYSUI_SEARCHPANEL_TOUCH,
+                        event.getActionMasked(), (int) event.getX(), (int) event.getY());
+            }
+        }
+        return super.onTouchEvent(event);
+    }
+
     private LayoutTransition createLayoutTransitioner() {
         LayoutTransition transitioner = new LayoutTransition();
         transitioner.setDuration(200);
@@ -324,7 +357,7 @@ public class SearchPanelView extends FrameLayout implements
 
     public boolean isAssistantAvailable() {
         return ((SearchManager) mContext.getSystemService(Context.SEARCH_SERVICE))
-                .getAssistIntent(mContext, UserHandle.USER_CURRENT) != null;
+                .getAssistIntent(mContext, true, UserHandle.USER_CURRENT) != null;
     }
 
     private boolean isScreenPortrait() {

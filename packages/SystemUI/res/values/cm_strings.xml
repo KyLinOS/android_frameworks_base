@@ -36,7 +36,7 @@
     <!-- Quick Settings -->
     <string name="quick_settings_gps">GPS</string>
     <string name="quick_settings_gps_off">GPS off</string>
-    <string name="quick_settings_screen_sleep">Go to sleep</string>
+    <string name="quick_settings_power">Power</string>
     <string name="quick_settings_ringer_on">Sound on</string>
     <string name="quick_settings_ringer_off">Sound off</string>
     <string name="quick_settings_vibration_on">Vibration on</string>
@@ -66,6 +66,8 @@
     <string name="quick_settings_lte_off">LTE off</string>
     <string name="quick_settings_volume">Volume</string>
     <string name="quick_settings_camera_label">Camera</string>
+    <string name="quick_settings_network_adb_disabled_label">Disabled</string>
+    <string name="quick_settings_network_adb_enabled_label">Enabled</string>
 
     <!-- Expanded desktop strings break the rules a bit - the icon identifies the feature, the string indicates current state -->
     <string name="quick_settings_expanded_desktop">Expanded</string>

@@ -1,5 +1,5 @@
 <?xml version="1.0" encoding="utf-8"?>
-<!-- Copyright (C) 2012-2013 The MoKee OpenSource Project
+<!-- Copyright (C) 2013 The KylinMod Open Source Project
 
      Licensed under the Apache License, Version 2.0 (the "License");
      you may not use this file except in compliance with the License.
@@ -32,13 +32,25 @@
     <!-- HALO -->
     <string name="accessibility_halo">Create notification halo.</string>
     <string name="halo_dismiss">Dismiss notification</string>
-    <string name="halo_hide">Hide</string>
-    <string name="halo_clear_all">Clear all notifications</string>
-    <string name="halo_silence">Hide and silence until woken</string>
-    <string name="halo_tutorial1">I am HALO</string>
-    <string name="halo_tutorial2">Double-tap-drag to move me around, drag to switch tasks</string>
-    <string name="halo_tutorial3">Change my behavior in the settings</string>
-
+    <string name="halo_hide">Hide</string>	
+    <string name="halo_clear_all">Dismiss all notifications</string>
+    <string name="halo_silence">Hide &amp; silence until woken</string>
+    <string name="halo_tutorial1">This is HALO</string>
+    <string name="halo_tutorial2">Move me: 2x-tap &amp; drag</string>
+    <string name="halo_tutorial3">Browse tasks: Horizontal drag</string>
+    <string name="halo_battery_plugged">CHARGING</string>
+    <string name="halo_battery_unplugged">REMAINING</string>
+    <string name="halo_battery_full">FULL</string>
+    <string name="halo_aeroplane1">AEROPLANE</string>
+    <string name="halo_aeroplane2">MODE</string>
+    <string name="halo_wifi_on">WI-FI ON</string>
+    <string name="halo_wifi_off">WI-FI OFF</string>
+    <string name="halo_signal_bars_4">FULL</string>
+    <string name="halo_signal_bars_3">THREE BARS</string>
+    <string name="halo_signal_bars_2">TWO BARS</string>
+    <string name="halo_signal_bars_1">ONE BAR</string>
+    <string name="halo_signal_bars_none">NO BARS</string>
+	
     <!-- App sidebar -->
     <string name="default_folder_text">Folder</string>
     <string name="title_activity_sidebar_configuration">Appbar content setup</string>
@@ -46,4 +58,14 @@
     <string name="toast_items_saved">Appbar items have been saved.</string>
     <string name="content_setup_instructions">Add items to the Appbar by long pressing any item on the right and drag it over to the Appbar.\n\nCombine items into folders by droping an item onto any existing item in the Appbar.\n\nTo remove an item simply drag it out of the Aappbar.</string>
     <string name="content_setup_dismiss">Continue</string>
+
+    <!-- Title shown in notification popup for launching notification in floating mode -->
+    <string name="status_bar_notification_floating_item_title">Floating mode</string>
+
+    <!-- Title shown in recents popup for showing app in floating mode -->
+    <string name="status_bar_recent_floating_item_title">Floating mode</string>
+
+    <!-- Title shown in recents popup for adding an application to the split view -->
+    <string name="status_bar_recent_add_to_split_view">Add to Split View</string>
+	
 </resources>

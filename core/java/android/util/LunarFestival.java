@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2012 The Android Open Source Project
+ * Copyright (C) 2012 The KylinMod Open Source Project
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -20,16 +20,23 @@ import android.content.Context;
 
 import com.android.internal.R;
 
+import java.util.Calendar;
+
 public class LunarFestival {
-	public static String getLunarFestival(String chinadate, Context context){
-		String [] lunarFestivalArray = context.getResources().getStringArray(R.array.lunar_festival);
-		chinadate = chinadate.substring(chinadate.length()-4,chinadate.length());
-		for(int i = 0;i<lunarFestivalArray.length;i++)
-		{
-			String [] lunar_str=lunarFestivalArray[i].split(" ");
-			if(lunar_str[0].equals(chinadate))
-				return lunar_str[1];
-		}
-		return "";
-	}
+
+    public static String getLunarFestival(String chinadate, Lunar lunar, Context context) {
+        String[] lunarFestivalArray = context.getResources().getStringArray(com.kylin.internal.R.array.lunar_festival);
+        chinadate = chinadate.substring(chinadate.length() - 4, chinadate.length());
+        for (int i = 0; i < lunarFestivalArray.length; i++) {
+            String[] lunar_str = lunarFestivalArray[i].split(" ");
+            if (lunar_str[0].equals(chinadate)) {
+                if (i == 0) {
+                    return lunar.isBigMonth(lunar_str[0]) ? "" : lunar_str[1] ;
+                } else {
+                    return lunar_str[1];
+                }
+            }
+        }
+        return "";
+    }
 }

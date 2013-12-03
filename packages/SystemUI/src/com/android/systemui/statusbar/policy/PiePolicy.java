@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2013 MoKee OpenSource Project
+ * Copyright (C) 2013 The KylinMod Open Source Project
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -112,23 +112,24 @@ public class PiePolicy {
     public static String getNetworkProvider() {
         String operatorName = Settings.System.getStringForUser(mContext.getContentResolver(), Settings.System.CUSTOM_CARRIER_LABEL, UserHandle.USER_CURRENT);
         if(TextUtils.isEmpty(operatorName)) {
-		operatorName = mContext.getString(R.string.quick_settings_wifi_no_network);
-		TelephonyManager telephonyManager = (TelephonyManager) mContext.getSystemService(Context.TELEPHONY_SERVICE);
-		if(isCN) {
-		    String operator = telephonyManager.getNetworkOperator();
-		    if(TextUtils.isEmpty(operator))
-		        operator = telephonyManager.getSimOperator();
-		    SpnOverride mSpnOverride = new SpnOverride();
-		    operatorName = mSpnOverride.getSpn(operator);
-		    if(operatorName == null) {
-		        operatorName = telephonyManager.getSimOperatorName();
-		    }    		
-		} else {
-		    operatorName = telephonyManager.getNetworkOperatorName();
-		    if(operatorName == null) {
-		        operatorName = telephonyManager.getSimOperatorName();
-		    }
-		}
+           operatorName = mContext.getString(R.string.quick_settings_wifi_no_network);
+           TelephonyManager telephonyManager = (TelephonyManager) mContext.getSystemService(Context.TELEPHONY_SERVICE);
+           if(isCN) {
+              String operator = telephonyManager.getNetworkOperator();
+              if(TextUtils.isEmpty(operator)) {
+                 operator = telephonyManager.getSimOperator();
+              }
+              SpnOverride mSpnOverride = new SpnOverride();
+              operatorName = mSpnOverride.getSpn(operator);
+              if(TextUtils.isEmpty(operatorName)) {
+                 operatorName = telephonyManager.getSimOperatorName();
+              }
+           } else {
+              operatorName = telephonyManager.getNetworkOperatorName();
+              if(TextUtils.isEmpty(operatorName)) {
+                 operatorName = telephonyManager.getSimOperatorName();
+              }
+           }
         }
         return operatorName.toUpperCase();
     }

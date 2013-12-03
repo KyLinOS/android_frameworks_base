@@ -733,6 +733,11 @@
   <public type="array" name="phoneTypes" id="0x01070003" />
   <public type="array" name="postalAddressTypes" id="0x01070004" />
 
+  <!-- The CTS android.net tests reference this resource, but fail becase
+       Google didn't declare it as a public resource. This fixes it for
+       the 4.3_r2 CTS release. -->
+  <public type="array" name="networkAttributes" id="0x1070015" />
+
   <public type="drawable" name="alert_dark_frame" id="0x01080000" />
   <public type="drawable" name="alert_light_frame" id="0x01080001" />
   <public type="drawable" name="arrow_down_float" id="0x01080002" />
@@ -2027,6 +2032,31 @@
   <public type="style" name="Widget.Holo.Light.CheckedTextView" id="0x010301da" />
   <public type="style" name="Widget.DeviceDefault.CheckedTextView" id="0x010301db" />
   <public type="style" name="Widget.DeviceDefault.Light.CheckedTextView" id="0x010301dc" />
+  
+  <!-- ===============================================================
+     Resources added in version 18 of the platform (Jelly Bean MR2)
+     =============================================================== -->
+  <eat-comment />
+
+  <public type="attr" name="mipMap" id="0x010103cd" />
+  <public type="attr" name="mirrorForRtl" id="0x010103ce" />
+  <public type="attr" name="windowOverscan" id="0x010103cf" />
+  <public type="attr" name="requiredForAllUsers" id="0x010103d0" />
+  <public type="attr" name="indicatorStart" id="0x010103d1" />
+  <public type="attr" name="indicatorEnd" id="0x010103d2" />
+  <public type="attr" name="childIndicatorStart" id="0x010103d3" />
+  <public type="attr" name="childIndicatorEnd" id="0x010103d4" />
+  <public type="attr" name="restrictedAccountType" id="0x010103d5" />
+  <public type="attr" name="requiredAccountType" id="0x010103d6" />
+  <public type="attr" name="canRequestTouchExplorationMode" id="0x010103d7" />
+  <public type="attr" name="canRequestEnhancedWebAccessibility" id="0x010103d8" />
+  <public type="attr" name="canRequestFilterKeyEvents" id="0x010103d9" />
+  <public type="attr" name="layoutMode" id="0x010103da" />
+
+  <public type="style" name="Theme.Holo.NoActionBar.Overscan" id="0x010301dd" />
+  <public type="style" name="Theme.Holo.Light.NoActionBar.Overscan" id="0x010301de" />
+  <public type="style" name="Theme.DeviceDefault.NoActionBar.Overscan" id="0x010301df" />
+  <public type="style" name="Theme.DeviceDefault.Light.NoActionBar.Overscan" id="0x010301e0" />
 
   <!-- KyLin Start -->
   <java-symbol type="id" name="lunar_date" />
@@ -2059,4 +2089,5 @@
   <java-symbol type="string" name="bw" />
   <java-symbol type="string" name="sy" />
   <!-- KyLin End -->
+
 </resources>
